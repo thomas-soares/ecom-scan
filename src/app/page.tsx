@@ -72,7 +72,19 @@ type Stat = {
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000/api";
 const POLL_INTERVAL_MS = 2000;
-const DEFAULT_SCAN_URL = "https://www.shopify.com";
+const DEFAULT_SCAN_URL = "https://www.nuvemshop.com.br";
+
+function mapApiError(error: unknown, fallbackMessage: string) {
+  if (error instanceof TypeError) {
+    return "Falha de conexao com a API. Inicie a API com `pnpm dev:api` na raiz do projeto.";
+  }
+
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+
+  return fallbackMessage;
+}
 
 function SidebarContent() {
   return (
@@ -394,11 +406,7 @@ export default function Home() {
       setScanStatus(data.status);
       await fetchScanById(data.scanId);
     } catch (error) {
-      setErrorMessage(
-        error instanceof Error
-          ? error.message
-          : "Erro inesperado ao iniciar scan.",
-      );
+      setErrorMessage(mapApiError(error, "Erro inesperado ao iniciar scan."));
     } finally {
       setIsSubmitting(false);
     }
@@ -425,9 +433,7 @@ export default function Home() {
       } catch (error) {
         if (!cancelled) {
           setErrorMessage(
-            error instanceof Error
-              ? error.message
-              : "Erro ao atualizar status do scan.",
+            mapApiError(error, "Erro ao atualizar status do scan."),
           );
         }
       } finally {
