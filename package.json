@@ -5,8 +5,12 @@
   "scripts": {
     "dev": "next dev",
     "dev:web": "next dev",
-    "dev:api": "tsx watch apps/api/src/main.ts",
-    "dev:worker": "tsx watch apps/scan-worker/src/main.ts",
+    "dev:api": "ts-node-dev --respawn --transpile-only --project apps/api/tsconfig.json apps/api/src/main.ts",
+    "dev:worker": "tsx watch --tsconfig apps/scan-worker/tsconfig.json apps/scan-worker/src/main.ts",
+    "dev:stack": "docker compose up -d",
+    "dev:stack:logs": "docker compose logs -f api worker web",
+    "dev:stack:down": "docker compose down",
+    "dev:stack:reset": "docker compose down -v",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
@@ -48,6 +52,7 @@
     "eslint-config-next": "16.2.11",
     "prisma": "^6.13.0",
     "tailwindcss": "^4",
+    "ts-node-dev": "^2.0.0",
     "tsx": "^4.20.5",
     "typescript": "^5"
   }
