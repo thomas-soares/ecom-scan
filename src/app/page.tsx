@@ -1,3 +1,6 @@
+"use client";
+
+import { useEffect, useMemo, useState, type ComponentType } from "react";
 import {
   AlertCircle,
   ArrowDownRight,
@@ -7,65 +10,69 @@ import {
   Gauge,
   Globe,
   House,
+  Loader2,
   Megaphone,
   Menu,
   MousePointer,
+  Search,
   Share2,
 } from "lucide-react";
 
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
+
+type Accent = "red" | "blue" | "amber";
+type ScanStatus = "QUEUED" | "RUNNING" | "COMPLETED" | "FAILED";
+
+type ScanData = {
+  id: string;
+  url: string;
+  status: ScanStatus;
+  queuedAt: string;
+  startedAt: string | null;
+  finishedAt: string | null;
+  errorMessage: string | null;
+  detections: Array<{
+    platform: "META" | "GOOGLE" | "TIKTOK" | "PINTEREST" | "SNAPCHAT";
+    isDetected: boolean;
+  }>;
+  eventValidations: Array<{
+    event: "PAGE_VIEW" | "ADD_TO_CART" | "INITIATE_CHECKOUT";
+    status: "PASS" | "WARNING" | "FAIL";
+    details: string | null;
+  }>;
+  findings: Array<{
+    title: string;
+    description: string;
+    impactScore: number;
+  }>;
+  report: {
+    estimatedMonthlyLossCents: number;
+    summary?: {
+      loadTimeMs?: number;
+    } | null;
+  } | null;
+};
 
 type Stat = {
   title: string;
   value: string;
   note: string;
-  icon: React.ComponentType<{ className?: string }>;
-  accent: "red" | "blue" | "amber";
+  icon: ComponentType<{ className?: string }>;
+  accent: Accent;
 };
 
-const stats: Stat[] = [
-  {
-    title: "Velocidade",
-    value: "42/100",
-    note: "Desempenho abaixo do ideal. Site mais lento que 77% dos concorrentes.",
-    icon: Gauge,
-    accent: "red",
-  },
-  {
-    title: "Anuncios",
-    value: "Inativo",
-    note: "Nenhuma conta de anuncios ativa foi detectada ou integrada.",
-    icon: Megaphone,
-    accent: "red",
-  },
-  {
-    title: "Rastreamento",
-    value: "1/4",
-    note: "Apenas 1 de 4 eventos essenciais esta sendo rastreado.",
-    icon: MousePointer,
-    accent: "amber",
-  },
-  {
-    title: "Dominio",
-    value: "14 meses",
-    note: "Dominio expira em 14 meses. Planeje a renovacao sem risco.",
-    icon: Globe,
-    accent: "amber",
-  },
-];
-
-const issues = [
-  "Site com carregamento lento em dispositivos moveis",
-  "Meta Pixel nao encontrado ou inativo",
-  "Eventos essenciais nao estao sendo rastreados corretamente",
-  "Titulo da pagina muito longo",
-  "Imagens sem compressao adequada",
-  "Nenhum anuncio ativo encontrado",
-];
+const API_BASE_URL =
+  process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000/api";
+const POLL_INTERVAL_MS = 2000;
+const DEFAULT_SCAN_URL = "https://www.shopify.com";
 
 function SidebarContent() {
   return (
@@ -120,19 +127,19 @@ function SidebarContent() {
   );
 }
 
-function ScoreRing({ value }: { value: number }) {
+function ScoreRing({ score }: { score: number }) {
   return (
     <div className="relative grid size-36 place-items-center">
       <div
         className="absolute inset-0 rounded-full"
         style={{
-          background: `conic-gradient(var(--destructive) ${value}%, #e6edf9 0)`,
+          background: `conic-gradient(var(--destructive) ${score}%, #e6edf9 0)`,
         }}
       />
       <div className="absolute inset-2 rounded-full bg-card" />
       <div className="relative text-center">
         <p className="text-5xl leading-none font-semibold text-destructive">
-          34
+          {score}
         </p>
         <p className="text-sm text-muted-foreground">/100</p>
       </div>
@@ -140,7 +147,309 @@ function ScoreRing({ value }: { value: number }) {
   );
 }
 
+function formatScanTime(value: string | null | undefined) {
+  if (!value) {
+    return "Aguardando conclusao";
+  }
+
+  return new Date(value).toLocaleString("pt-BR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function statusLabel(status: ScanStatus | null) {
+  if (!status) {
+    return "Sem scan";
+  }
+
+  if (status === "QUEUED") {
+    return "Na fila";
+  }
+
+  if (status === "RUNNING") {
+    return "Em execucao";
+  }
+
+  if (status === "COMPLETED") {
+    return "Concluido";
+  }
+
+  return "Falhou";
+}
+
+function getStatusVariant(
+  status: ScanStatus | null,
+): "default" | "secondary" | "destructive" {
+  if (!status) {
+    return "secondary";
+  }
+
+  if (status === "FAILED") {
+    return "destructive";
+  }
+
+  if (status === "COMPLETED") {
+    return "default";
+  }
+
+  return "secondary";
+}
+
 export default function Home() {
+  const [scanUrl, setScanUrl] = useState(DEFAULT_SCAN_URL);
+  const [scan, setScan] = useState<ScanData | null>(null);
+  const [activeScanId, setActiveScanId] = useState<string | null>(null);
+  const [scanStatus, setScanStatus] = useState<ScanStatus | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const isPolling =
+    Boolean(activeScanId) &&
+    (scanStatus === "QUEUED" || scanStatus === "RUNNING");
+
+  const score = useMemo(() => {
+    if (!scan || scan.status !== "COMPLETED") {
+      return 34;
+    }
+
+    const totalImpact = scan.findings.reduce(
+      (sum, item) => sum + item.impactScore,
+      0,
+    );
+    return Math.max(5, Math.min(99, 100 - totalImpact));
+  }, [scan]);
+
+  const estimatedLoss = useMemo(() => {
+    const cents = scan?.report?.estimatedMonthlyLossCents ?? 1_240_000;
+    return new Intl.NumberFormat("pt-BR", {
+      style: "currency",
+      currency: "BRL",
+      maximumFractionDigits: 0,
+    }).format(cents / 100);
+  }, [scan]);
+
+  const stats = useMemo<Stat[]>(() => {
+    if (!scan || scan.status !== "COMPLETED") {
+      return [
+        {
+          title: "Velocidade",
+          value: "42/100",
+          note: "Desempenho abaixo do ideal. Site mais lento que 77% dos concorrentes.",
+          icon: Gauge,
+          accent: "red",
+        },
+        {
+          title: "Anuncios",
+          value: "Inativo",
+          note: "Nenhuma conta de anuncios ativa foi detectada ou integrada.",
+          icon: Megaphone,
+          accent: "red",
+        },
+        {
+          title: "Rastreamento",
+          value: "1/4",
+          note: "Apenas 1 de 4 eventos essenciais esta sendo rastreado.",
+          icon: MousePointer,
+          accent: "amber",
+        },
+        {
+          title: "Dominio",
+          value: "14 meses",
+          note: "Dominio expira em 14 meses. Planeje a renovacao sem risco.",
+          icon: Globe,
+          accent: "amber",
+        },
+      ];
+    }
+
+    const loadTimeMs = Number(scan.report?.summary?.loadTimeMs);
+    const normalizedSpeed = Number.isFinite(loadTimeMs)
+      ? Math.max(10, Math.min(99, 100 - Math.floor(loadTimeMs / 100)))
+      : 42;
+
+    const detectedPlatforms = scan.detections.filter(
+      (item) => item.isDetected,
+    ).length;
+    const eventPassCount = scan.eventValidations.filter(
+      (item) => item.status === "PASS",
+    ).length;
+    const eventTotal = scan.eventValidations.length || 4;
+
+    return [
+      {
+        title: "Velocidade",
+        value: `${normalizedSpeed}/100`,
+        note: `Tempo estimado de carregamento inicial observado no scan.`,
+        icon: Gauge,
+        accent: normalizedSpeed < 55 ? "red" : "blue",
+      },
+      {
+        title: "Anuncios",
+        value:
+          detectedPlatforms > 0 ? `${detectedPlatforms} ativos` : "Inativo",
+        note: "Plataformas de anuncios detectadas por scripts e tags na pagina.",
+        icon: Megaphone,
+        accent: detectedPlatforms > 0 ? "blue" : "red",
+      },
+      {
+        title: "Rastreamento",
+        value: `${eventPassCount}/${eventTotal}`,
+        note: "Eventos essenciais validados com base no resultado atual.",
+        icon: MousePointer,
+        accent: eventPassCount >= 2 ? "blue" : "amber",
+      },
+      {
+        title: "Dominio",
+        value: "N/D",
+        note: "Informacao de expiracao de dominio sera adicionada nas proximas versoes.",
+        icon: Globe,
+        accent: "amber",
+      },
+    ];
+  }, [scan]);
+
+  const issues = useMemo(() => {
+    if (!scan || scan.status !== "COMPLETED") {
+      return [
+        "Site com carregamento lento em dispositivos moveis",
+        "Meta Pixel nao encontrado ou inativo",
+        "Eventos essenciais nao estao sendo rastreados corretamente",
+        "Titulo da pagina muito longo",
+        "Imagens sem compressao adequada",
+        "Nenhum anuncio ativo encontrado",
+      ];
+    }
+
+    const findingIssues = scan.findings.map((item) => item.title);
+    const eventWarnings = scan.eventValidations
+      .filter((item) => item.status !== "PASS")
+      .map(
+        (item) =>
+          item.details || `Evento ${item.event} com validacao incompleta`,
+      );
+
+    const merged = [...findingIssues, ...eventWarnings];
+    return merged.length > 0
+      ? merged
+      : ["Nenhum problema critico detectado nesta varredura."];
+  }, [scan]);
+
+  async function fetchScanById(scanId: string) {
+    const response = await fetch(`${API_BASE_URL}/scans/${scanId}`, {
+      method: "GET",
+      cache: "no-store",
+    });
+
+    if (!response.ok) {
+      const body = await response.text();
+      throw new Error(body || "Nao foi possivel consultar o scan.");
+    }
+
+    const data = (await response.json()) as ScanData;
+    setScan(data);
+    setScanStatus(data.status);
+    setErrorMessage(
+      data.status === "FAILED" ? data.errorMessage || "Scan falhou." : null,
+    );
+
+    return data;
+  }
+
+  async function handleRunScan() {
+    const trimmedUrl = scanUrl.trim();
+
+    if (!trimmedUrl) {
+      setErrorMessage("Informe uma URL valida para iniciar o scan.");
+      return;
+    }
+
+    setIsSubmitting(true);
+    setErrorMessage(null);
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/scans`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          url: trimmedUrl,
+        }),
+      });
+
+      if (!response.ok) {
+        const body = await response.text();
+        throw new Error(body || "Nao foi possivel iniciar o scan.");
+      }
+
+      const data = (await response.json()) as {
+        scanId: string;
+        status: ScanStatus;
+      };
+
+      setActiveScanId(data.scanId);
+      setScanStatus(data.status);
+      await fetchScanById(data.scanId);
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : "Erro inesperado ao iniciar scan.",
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  useEffect(() => {
+    if (!activeScanId) {
+      return;
+    }
+
+    if (scanStatus === "COMPLETED" || scanStatus === "FAILED") {
+      return;
+    }
+
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    const poll = async () => {
+      let nextStatus: ScanStatus | null = null;
+
+      try {
+        const data = await fetchScanById(activeScanId);
+        nextStatus = data.status;
+      } catch (error) {
+        if (!cancelled) {
+          setErrorMessage(
+            error instanceof Error
+              ? error.message
+              : "Erro ao atualizar status do scan.",
+          );
+        }
+      } finally {
+        if (!cancelled) {
+          if (nextStatus === "QUEUED" || nextStatus === "RUNNING") {
+            timer = setTimeout(poll, POLL_INTERVAL_MS);
+          }
+        }
+      }
+    };
+
+    timer = setTimeout(poll, POLL_INTERVAL_MS);
+
+    return () => {
+      cancelled = true;
+
+      if (timer) {
+        clearTimeout(timer);
+      }
+    };
+  }, [activeScanId, scanStatus]);
+
   return (
     <div className="min-h-screen bg-[radial-gradient(circle_at_top,_#e7efff,_#f7f9fc_45%,_#f7f9fc_100%)]">
       <div className="mx-auto flex w-full max-w-[1400px]">
@@ -189,20 +498,70 @@ export default function Home() {
             </div>
           </header>
 
+          <Card className="mb-5">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Search className="size-4" />
+                Nova analise de URL
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="grid gap-2">
+                <Label htmlFor="scan-url">URL da loja</Label>
+                <Input
+                  id="scan-url"
+                  value={scanUrl}
+                  onChange={(event) => setScanUrl(event.target.value)}
+                  placeholder="https://sualoja.com"
+                />
+              </div>
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                <Button
+                  onClick={handleRunScan}
+                  disabled={isSubmitting || isPolling}
+                >
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 className="size-4 animate-spin" />
+                      Iniciando scan...
+                    </>
+                  ) : isPolling ? (
+                    <>
+                      <Loader2 className="size-4 animate-spin" />
+                      Scan em andamento...
+                    </>
+                  ) : (
+                    "Rodar diagnostico"
+                  )}
+                </Button>
+                <Badge variant={getStatusVariant(scanStatus)}>
+                  {statusLabel(scanStatus)}
+                </Badge>
+              </div>
+              {(isSubmitting || isPolling) && (
+                <Progress value={scanStatus === "QUEUED" ? 35 : 70} />
+              )}
+              {errorMessage && (
+                <p className="text-sm text-destructive">{errorMessage}</p>
+              )}
+            </CardContent>
+          </Card>
+
           <section className="grid gap-5 rounded-2xl border border-border bg-card p-5 shadow-sm md:grid-cols-[1.2fr_0.8fr] md:p-7">
             <div>
               <h1 className="text-3xl font-semibold tracking-tight text-foreground">
                 Relatorio de diagnostico
               </h1>
               <p className="mt-2 text-sm text-muted-foreground">
-                https://seudominio.com.br
+                {scan?.url ?? "https://seudominio.com.br"}
               </p>
               <p className="mt-1 text-sm text-muted-foreground">
-                Analisado em 24 de maio de 2025 as 11:32
+                Analisado em{" "}
+                {formatScanTime(scan?.finishedAt ?? scan?.queuedAt)}
               </p>
             </div>
             <div className="flex flex-col items-start gap-3 md:items-end">
-              <ScoreRing value={34} />
+              <ScoreRing score={score} />
               <div className="max-w-xs text-sm text-muted-foreground md:text-right">
                 <p className="font-medium text-foreground">Pontuacao geral</p>
                 <p>
@@ -223,7 +582,7 @@ export default function Home() {
                   Perda estimada
                 </p>
                 <p className="text-4xl font-semibold text-red-600">
-                  R$ 12.400/mes
+                  {estimatedLoss}/mes
                 </p>
                 <p className="text-sm text-red-700/80">
                   Este e o valor que voce pode estar perdendo por mes devido aos
@@ -256,7 +615,7 @@ export default function Home() {
                   </CardHeader>
                   <CardContent>
                     <p
-                      className={`text-3xl font-semibold ${item.accent === "red" ? "text-red-600" : "text-amber-600"}`}
+                      className={`text-3xl font-semibold ${item.accent === "red" ? "text-red-600" : item.accent === "amber" ? "text-amber-600" : "text-primary"}`}
                     >
                       {item.value}
                     </p>
