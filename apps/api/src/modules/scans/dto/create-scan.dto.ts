@@ -1,9 +1,10 @@
-import { IsNotEmpty, IsString, IsUrl } from "class-validator";
+import { IsNotEmpty, IsOptional, IsString, IsUrl } from "class-validator";
 
 export class CreateScanDto {
+  @IsOptional()
   @IsString()
   @IsNotEmpty()
-  storeId!: string;
+  storeId?: string;
 
   @IsUrl({
     require_protocol: true,

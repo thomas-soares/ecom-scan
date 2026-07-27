@@ -7,7 +7,7 @@ import { scansQueue } from "../../common/queue/scan-queue";
 
 type CreateScanInput = {
   userId?: string;
-  storeId: string;
+  storeId?: string;
   url: string;
 };
 
@@ -16,17 +16,41 @@ export class ScansService {
   constructor(private readonly prisma: PrismaService) {}
 
   async createScan(input: CreateScanInput) {
-    const store = await this.prisma.store.findFirst({
-      where: {
-        id: input.storeId,
-      },
-      select: {
-        id: true,
-      },
-    });
+    const normalizedUrl = new URL(input.url).toString();
+    let resolvedStoreId = input.storeId;
 
-    if (!store) {
-      throw new NotFoundException("Store not found.");
+    if (resolvedStoreId) {
+      const store = await this.prisma.store.findFirst({
+        where: {
+          id: resolvedStoreId,
+        },
+        select: {
+          id: true,
+        },
+      });
+
+      if (!store) {
+        throw new NotFoundException("Store not found.");
+      }
+    } else {
+      const hostname = new URL(normalizedUrl).hostname.replace(/^www\./i, "");
+      const store = await this.prisma.store.upsert({
+        where: {
+          url: normalizedUrl,
+        },
+        update: {
+          name: hostname,
+        },
+        create: {
+          name: hostname,
+          url: normalizedUrl,
+        },
+        select: {
+          id: true,
+        },
+      });
+
+      resolvedStoreId = store.id;
     }
 
     const cacheWindowStart = new Date(
@@ -35,8 +59,8 @@ export class ScansService {
 
     const cachedScan = await this.prisma.scan.findFirst({
       where: {
-        storeId: input.storeId,
-        url: input.url,
+        storeId: resolvedStoreId,
+        url: normalizedUrl,
         status: ScanStatus.COMPLETED,
         finishedAt: {
           gte: cacheWindowStart,
@@ -62,9 +86,9 @@ export class ScansService {
 
     const scan = await this.prisma.scan.create({
       data: {
-        storeId: input.storeId,
+        storeId: resolvedStoreId,
         requestedByUserId: input.userId,
-        url: input.url,
+        url: normalizedUrl,
         status: ScanStatus.QUEUED,
         queuedAt: new Date(),
       },
@@ -78,8 +102,8 @@ export class ScansService {
       "scan-store-url",
       {
         scanId: scan.id,
-        storeId: input.storeId,
-        url: input.url,
+        storeId: resolvedStoreId,
+        url: normalizedUrl,
       },
       {
         attempts: 4,
