@@ -14,6 +14,7 @@ export type ScanOutput = {
     platform: DetectionName;
     isDetected: boolean;
     evidence?: string;
+    details?: string;
   }>;
   events: Array<{
     event: EventName;
@@ -42,7 +43,14 @@ const detectionRules: Record<DetectionName, RegExp> = {
   SNAPCHAT: /(sc-static\.net|snaptr\()/i,
 };
 
-export async function runStoreScan(url: string): Promise<ScanOutput> {
+export type ScanOptions = {
+  disabledPlatforms?: DetectionName[];
+};
+
+export async function runStoreScan(
+  url: string,
+  options: ScanOptions = {},
+): Promise<ScanOutput> {
   const browser = await chromium.launch({ headless: true });
   const page = await browser.newPage();
 
@@ -58,9 +66,18 @@ export async function runStoreScan(url: string): Promise<ScanOutput> {
   await browser.close();
 
   const joined = `${html}\n${scripts.join("\n")}`;
+  const disabledPlatforms = new Set(options.disabledPlatforms ?? []);
 
   const detections = (Object.keys(detectionRules) as DetectionName[]).map(
     (platform) => {
+      if (disabledPlatforms.has(platform)) {
+        return {
+          platform,
+          isDetected: false,
+          details: "Desativado por feature flag.",
+        };
+      }
+
       const matched = joined.match(detectionRules[platform]);
       return {
         platform,

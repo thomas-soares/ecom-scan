@@ -43,6 +43,7 @@ type ScanData = {
     platform: "META" | "GOOGLE" | "TIKTOK" | "PINTEREST" | "SNAPCHAT";
     isDetected: boolean;
     evidence?: string | null;
+    details?: string | null;
   }>;
   eventValidations: Array<{
     event: "PAGE_VIEW" | "ADD_TO_CART" | "INITIATE_CHECKOUT";
@@ -411,13 +412,20 @@ export default function Home() {
 
     const detectionSteps = scan.detections.map((item) => {
       const found = item.isDetected;
+      const disabled = Boolean(item.details);
 
       return {
-        label: `${platformLabel(item.platform)} detectado`,
-        detail: found
-          ? `Encontrado no carregamento inicial${item.evidence ? `: ${item.evidence}` : ""}.`
-          : `Nao encontrado em ${scan.url}.`,
-        tone: found ? "default" : "destructive",
+        label: disabled
+          ? `${platformLabel(item.platform)} desativado`
+          : found
+            ? `${platformLabel(item.platform)} detectado`
+            : `${platformLabel(item.platform)} nao encontrado`,
+        detail: disabled
+          ? item.details || "Desativado por feature flag."
+          : found
+            ? `Encontrado no carregamento inicial${item.evidence ? `: ${item.evidence}` : ""}.`
+            : `Nao encontrado em ${scan.url}.`,
+        tone: disabled ? "secondary" : found ? "default" : "destructive",
       } satisfies ExecutionStep;
     });
 
@@ -714,7 +722,7 @@ export default function Home() {
                       ? "Nao achou"
                       : step.tone === "default"
                         ? "OK"
-                        : "Pendente"}
+                        : "Desativado"}
                   </Badge>
                   <div className="min-w-0">
                     <p className="text-sm font-medium text-foreground">

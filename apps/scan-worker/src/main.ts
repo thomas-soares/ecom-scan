@@ -4,10 +4,20 @@ import { PrismaClient, ScanStatus, ValidationStatus } from "@prisma/client";
 import { Job, Worker } from "bullmq";
 import IORedis from "ioredis";
 
-import { runStoreScan } from "./scan/run-store-scan";
+import { type DetectionName, runStoreScan } from "./scan/run-store-scan";
 
 const REDIS_URL = process.env.REDIS_URL ?? "redis://localhost:6379";
 const SCANS_QUEUE_NAME = "store-scans";
+
+function isEnabled(envValue: string | undefined) {
+  return envValue === "true" || envValue === "1";
+}
+
+const disabledPlatforms: DetectionName[] = [
+  ...(isEnabled(process.env.ENABLE_TIKTOK_SCAN) ? [] : ["TIKTOK"]),
+  ...(isEnabled(process.env.ENABLE_PINTEREST_SCAN) ? [] : ["PINTEREST"]),
+  ...(isEnabled(process.env.ENABLE_SNAPCHAT_SCAN) ? [] : ["SNAPCHAT"]),
+];
 
 const redisConnection = new IORedis(REDIS_URL, {
   maxRetriesPerRequest: null,
@@ -31,7 +41,9 @@ async function processScan(job: Job<ScanJobData>) {
     },
   });
 
-  const output = await runStoreScan(job.data.url);
+  const output = await runStoreScan(job.data.url, {
+    disabledPlatforms,
+  });
 
   await prisma.$transaction(async (tx) => {
     await tx.scanPlatformDetection.deleteMany({
@@ -52,6 +64,7 @@ async function processScan(job: Job<ScanJobData>) {
         platform: d.platform,
         isDetected: d.isDetected,
         evidence: d.evidence,
+        details: d.details ?? null,
       })),
     });
 
