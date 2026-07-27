@@ -1,5 +1,5 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
-import { ScanStatus } from "@prisma/client";
+import { ScanStatus, StorePlatform } from "@prisma/client";
 
 import { env } from "../../common/config/env";
 import { PrismaService } from "../../common/prisma/prisma.service";
@@ -11,12 +11,27 @@ type CreateScanInput = {
   url: string;
 };
 
+function detectStorePlatform(url: string): StorePlatform {
+  const hostname = new URL(url).hostname.toLowerCase();
+
+  if (hostname.includes("nuvemshop") || hostname.includes("tiendanube")) {
+    return StorePlatform.NUVEMSHOP;
+  }
+
+  if (hostname.includes("myshopify")) {
+    return StorePlatform.SHOPIFY;
+  }
+
+  return StorePlatform.OTHER;
+}
+
 @Injectable()
 export class ScansService {
   constructor(private readonly prisma: PrismaService) {}
 
   async createScan(input: CreateScanInput) {
     const normalizedUrl = new URL(input.url).toString();
+    const storePlatform = detectStorePlatform(normalizedUrl);
     let resolvedStoreId = input.storeId;
 
     if (resolvedStoreId) {
@@ -40,10 +55,12 @@ export class ScansService {
         },
         update: {
           name: hostname,
+          platform: storePlatform,
         },
         create: {
           name: hostname,
           url: normalizedUrl,
+          platform: storePlatform,
         },
         select: {
           id: true,

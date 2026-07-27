@@ -9,6 +9,8 @@ datasource db {
 
 enum StorePlatform {
     SHOPIFY
+    NUVEMSHOP
+    OTHER
 }
 
 enum ScanStatus {
