@@ -78,6 +78,10 @@ type ExecutionStep = {
   tone: "default" | "secondary" | "destructive";
 };
 
+const HIDDEN_PLATFORM_DETAILS = new Set<
+  ScanData["detections"][number]["platform"]
+>(["TIKTOK", "PINTEREST", "SNAPCHAT"]);
+
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000/api";
 const POLL_INTERVAL_MS = 2000;
@@ -253,10 +257,11 @@ export default function Home() {
   const isPolling =
     Boolean(activeScanId) &&
     (scanStatus === "QUEUED" || scanStatus === "RUNNING");
+  const hasScan = Boolean(scan);
 
   const score = useMemo(() => {
     if (!scan || scan.status !== "COMPLETED") {
-      return 34;
+      return 0;
     }
 
     const totalImpact = scan.findings.reduce(
@@ -267,7 +272,7 @@ export default function Home() {
   }, [scan]);
 
   const estimatedLoss = useMemo(() => {
-    const cents = scan?.report?.estimatedMonthlyLossCents ?? 1_240_000;
+    const cents = scan?.report?.estimatedMonthlyLossCents ?? 0;
     return new Intl.NumberFormat("pt-BR", {
       style: "currency",
       currency: "BRL",
@@ -277,36 +282,7 @@ export default function Home() {
 
   const stats = useMemo<Stat[]>(() => {
     if (!scan || scan.status !== "COMPLETED") {
-      return [
-        {
-          title: "Velocidade",
-          value: "42/100",
-          note: "Desempenho abaixo do ideal. Site mais lento que 77% dos concorrentes.",
-          icon: Gauge,
-          accent: "red",
-        },
-        {
-          title: "Anuncios",
-          value: "Inativo",
-          note: "Nenhuma conta de anuncios ativa foi detectada ou integrada.",
-          icon: Megaphone,
-          accent: "red",
-        },
-        {
-          title: "Rastreamento",
-          value: "1/4",
-          note: "Apenas 1 de 4 eventos essenciais esta sendo rastreado.",
-          icon: MousePointer,
-          accent: "amber",
-        },
-        {
-          title: "Dominio",
-          value: "14 meses",
-          note: "Dominio expira em 14 meses. Planeje a renovacao sem risco.",
-          icon: Globe,
-          accent: "amber",
-        },
-      ];
+      return [];
     }
 
     const loadTimeMs = Number(scan.report?.summary?.loadTimeMs);
@@ -357,14 +333,7 @@ export default function Home() {
 
   const issues = useMemo(() => {
     if (!scan || scan.status !== "COMPLETED") {
-      return [
-        "Site com carregamento lento em dispositivos moveis",
-        "Meta Pixel nao encontrado ou inativo",
-        "Eventos essenciais nao estao sendo rastreados corretamente",
-        "Titulo da pagina muito longo",
-        "Imagens sem compressao adequada",
-        "Nenhum anuncio ativo encontrado",
-      ];
+      return [];
     }
 
     const findingIssues = scan.findings.map((item) => item.title);
@@ -383,53 +352,26 @@ export default function Home() {
 
   const executionSteps = useMemo<ExecutionStep[]>(() => {
     if (!scan) {
-      return [
-        {
-          label: "Abrir a URL da loja",
-          detail: "Aguardando o primeiro scan para mostrar o resultado real.",
-          tone: "secondary",
-        },
-        {
-          label: "Capturar HTML e scripts",
-          detail:
-            "HTML, scripts inline e fontes externas ainda nao foram lidos.",
-          tone: "secondary",
-        },
-        {
-          label: "Buscar pixels de anuncio",
-          detail:
-            "Meta, Google, TikTok, Pinterest e Snapchat serao verificados.",
-          tone: "secondary",
-        },
-        {
-          label: "Validar eventos principais",
-          detail:
-            "page_view, add_to_cart e initiate_checkout ainda nao foram testados.",
-          tone: "secondary",
-        },
-      ];
+      return [];
     }
 
-    const detectionSteps = scan.detections.map((item) => {
-      const found = item.isDetected;
-      const disabled = Boolean(item.details);
+    const detectionSteps: ExecutionStep[] = scan.detections
+      .filter((item) => !HIDDEN_PLATFORM_DETAILS.has(item.platform))
+      .map((item) => {
+        const found = item.isDetected;
 
-      return {
-        label: disabled
-          ? `${platformLabel(item.platform)} desativado`
-          : found
+        return {
+          label: found
             ? `${platformLabel(item.platform)} detectado`
             : `${platformLabel(item.platform)} nao encontrado`,
-        detail: disabled
-          ? item.details || "Desativado por feature flag."
-          : found
+          detail: found
             ? `Encontrado no carregamento inicial${item.evidence ? `: ${item.evidence}` : ""}.`
             : `Nao encontrado em ${scan.url}.`,
-        tone: disabled ? "secondary" : found ? "default" : "destructive",
-      } satisfies ExecutionStep;
-    });
+          tone: found ? "default" : "destructive",
+        } satisfies ExecutionStep;
+      });
 
-    const eventSteps = scan.eventValidations.map((item) => {
+    const eventSteps: ExecutionStep[] = scan.eventValidations.map((item) => {
       const passed = item.status === "PASS";
 
       return {
@@ -441,7 +383,7 @@ export default function Home() {
       } satisfies ExecutionStep;
     });
 
-    const performanceStep = scan.report?.summary?.loadTimeMs
+    const performanceStep: ExecutionStep[] = scan.report?.summary?.loadTimeMs
       ? [
           {
             label: "Medir tempo de carregamento",
@@ -452,7 +394,7 @@ export default function Home() {
         ]
       : [];
 
-    return [
+    const steps: ExecutionStep[] = [
       {
         label: "Abrir a URL da loja",
         detail: `A URL ${scan.url} foi carregada e observada pelo Ecom Scan.`,
@@ -467,6 +409,8 @@ export default function Home() {
       ...eventSteps,
       ...performanceStep,
     ];
+
+    return steps;
   }, [scan]);
 
   async function fetchScanById(scanId: string) {
@@ -673,155 +617,175 @@ export default function Home() {
             </CardContent>
           </Card>
 
-          <section className="grid gap-5 rounded-2xl border border-border bg-card p-5 shadow-sm md:grid-cols-[1.2fr_0.8fr] md:p-7">
-            <div>
-              <h1 className="text-3xl font-semibold tracking-tight text-foreground">
-                Relatorio de diagnostico
-              </h1>
-              <p className="mt-2 text-sm text-muted-foreground">
-                {scan?.url ?? "https://seudominio.com.br"}
-              </p>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Analisado em{" "}
-                {formatScanTime(scan?.finishedAt ?? scan?.queuedAt)}
-              </p>
-            </div>
-            <div className="flex flex-col items-start gap-3 md:items-end">
-              <ScoreRing score={score} />
-              <div className="max-w-xs text-sm text-muted-foreground md:text-right">
-                <p className="font-medium text-foreground">Pontuacao geral</p>
-                <p>
-                  Seu site esta abaixo da media e precisa de melhorias urgentes
-                  para evitar perdas.
-                </p>
-              </div>
-            </div>
-          </section>
-
-          <Card className="mt-5">
-            <CardHeader>
-              <CardTitle>O que o Ecom Scan tentou fazer</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2 pt-0">
-              {executionSteps.map((step) => (
-                <div
-                  key={`${step.label}-${step.detail}`}
-                  className="flex items-start gap-3 rounded-lg border border-border/60 bg-muted/20 px-3 py-2"
-                >
-                  <Badge
-                    variant={
-                      step.tone === "destructive"
-                        ? "destructive"
-                        : step.tone === "default"
-                          ? "default"
-                          : "secondary"
-                    }
-                    className="mt-0.5 shrink-0"
-                  >
-                    {step.tone === "destructive"
-                      ? "Nao achou"
-                      : step.tone === "default"
-                        ? "OK"
-                        : "Desativado"}
-                  </Badge>
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium text-foreground">
-                      {step.label}
+          {hasScan ? (
+            <>
+              <section className="grid gap-5 rounded-2xl border border-border bg-card p-5 shadow-sm md:grid-cols-[1.2fr_0.8fr] md:p-7">
+                <div>
+                  <h1 className="text-3xl font-semibold tracking-tight text-foreground">
+                    Relatorio de diagnostico
+                  </h1>
+                  <p className="mt-2 text-sm text-muted-foreground">
+                    {scan?.url}
+                  </p>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Analisado em{" "}
+                    {formatScanTime(scan?.finishedAt ?? scan?.queuedAt)}
+                  </p>
+                </div>
+                <div className="flex flex-col items-start gap-3 md:items-end">
+                  <ScoreRing score={score} />
+                  <div className="max-w-xs text-sm text-muted-foreground md:text-right">
+                    <p className="font-medium text-foreground">
+                      Pontuacao geral
                     </p>
-                    <p className="text-sm text-muted-foreground">
-                      {step.detail}
+                    <p>
+                      Seu site esta abaixo da media e precisa de melhorias
+                      urgentes para evitar perdas.
                     </p>
                   </div>
                 </div>
-              ))}
-            </CardContent>
-          </Card>
+              </section>
 
-          <Card className="mt-5 border-red-200 bg-red-50/60">
-            <CardContent className="flex flex-col gap-4 py-6 sm:flex-row sm:items-center">
-              <div className="grid size-16 place-items-center rounded-full border border-red-300 bg-white text-red-600">
-                <ArrowDownRight className="size-7" />
-              </div>
-              <div>
-                <p className="text-sm font-medium uppercase tracking-wide text-red-700">
-                  Perda estimada
-                </p>
-                <p className="text-4xl font-semibold text-red-600">
-                  {estimatedLoss}/mes
-                </p>
-                <p className="text-sm text-red-700/80">
-                  Este e o valor que voce pode estar perdendo por mes devido aos
-                  problemas encontrados.
-                </p>
-              </div>
-            </CardContent>
-          </Card>
-
-          <section className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            {stats.map((item) => {
-              const accentClass =
-                item.accent === "red"
-                  ? "text-red-600 border-red-200 bg-red-50"
-                  : item.accent === "amber"
-                    ? "text-amber-600 border-amber-200 bg-amber-50"
-                    : "text-primary border-primary/30 bg-primary/10";
-
-              return (
-                <Card key={item.title}>
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-3 text-base">
-                      <span
-                        className={`grid size-9 place-items-center rounded-full border ${accentClass}`}
-                      >
-                        <item.icon className="size-4" />
-                      </span>
-                      {item.title}
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <p
-                      className={`text-3xl font-semibold ${item.accent === "red" ? "text-red-600" : item.accent === "amber" ? "text-amber-600" : "text-primary"}`}
+              <Card className="mt-5">
+                <CardHeader>
+                  <CardTitle>O que o Ecom Scan tentou fazer</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-2 pt-0">
+                  {executionSteps.map((step) => (
+                    <div
+                      key={`${step.label}-${step.detail}`}
+                      className="flex items-start gap-3 rounded-lg border border-border/60 bg-muted/20 px-3 py-2"
                     >
-                      {item.value}
-                    </p>
-                    <p className="mt-2 text-sm text-muted-foreground">
-                      {item.note}
-                    </p>
-                  </CardContent>
-                </Card>
-              );
-            })}
-          </section>
-
-          <Card className="mt-5">
-            <CardHeader>
-              <CardTitle>Problemas detectados</CardTitle>
-            </CardHeader>
-            <CardContent className="pt-0">
-              <ul>
-                {issues.map((issue) => (
-                  <li
-                    key={issue}
-                    className="flex items-center justify-between border-t border-border py-3 first:border-t-0"
-                  >
-                    <div className="flex items-center gap-2 text-sm">
-                      <AlertCircle className="size-4 text-red-500" />
-                      <span>{issue}</span>
+                      <Badge
+                        variant={
+                          step.tone === "destructive"
+                            ? "destructive"
+                            : step.tone === "default"
+                              ? "default"
+                              : "secondary"
+                        }
+                        className="mt-0.5 shrink-0"
+                      >
+                        {step.tone === "destructive"
+                          ? "Nao achou"
+                          : step.tone === "default"
+                            ? "OK"
+                            : "Desativado"}
+                      </Badge>
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-foreground">
+                          {step.label}
+                        </p>
+                        <p className="text-sm text-muted-foreground">
+                          {step.detail}
+                        </p>
+                      </div>
                     </div>
-                    <ChevronRight className="size-4 text-muted-foreground" />
-                  </li>
-                ))}
-              </ul>
-            </CardContent>
-          </Card>
+                  ))}
+                </CardContent>
+              </Card>
 
-          <Button className="mt-5 h-12 w-full text-base">
-            Quero recuperar esse potencial
-          </Button>
+              <Card className="mt-5 border-red-200 bg-red-50/60">
+                <CardContent className="flex flex-col gap-4 py-6 sm:flex-row sm:items-center">
+                  <div className="grid size-16 place-items-center rounded-full border border-red-300 bg-white text-red-600">
+                    <ArrowDownRight className="size-7" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium uppercase tracking-wide text-red-700">
+                      Perda estimada
+                    </p>
+                    <p className="text-4xl font-semibold text-red-600">
+                      {estimatedLoss}/mes
+                    </p>
+                    <p className="text-sm text-red-700/80">
+                      Este e o valor que voce pode estar perdendo por mes devido
+                      aos problemas encontrados.
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
 
-          <p className="mt-4 text-center text-xs text-muted-foreground">
-            Seus dados estao seguros e nao sao compartilhados com terceiros.
-          </p>
+              <section className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                {stats.map((item) => {
+                  const accentClass =
+                    item.accent === "red"
+                      ? "text-red-600 border-red-200 bg-red-50"
+                      : item.accent === "amber"
+                        ? "text-amber-600 border-amber-200 bg-amber-50"
+                        : "text-primary border-primary/30 bg-primary/10";
+
+                  return (
+                    <Card key={item.title}>
+                      <CardHeader>
+                        <CardTitle className="flex items-center gap-3 text-base">
+                          <span
+                            className={`grid size-9 place-items-center rounded-full border ${accentClass}`}
+                          >
+                            <item.icon className="size-4" />
+                          </span>
+                          {item.title}
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <p
+                          className={`text-3xl font-semibold ${item.accent === "red" ? "text-red-600" : item.accent === "amber" ? "text-amber-600" : "text-primary"}`}
+                        >
+                          {item.value}
+                        </p>
+                        <p className="mt-2 text-sm text-muted-foreground">
+                          {item.note}
+                        </p>
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+              </section>
+
+              <Card className="mt-5">
+                <CardHeader>
+                  <CardTitle>Problemas detectados</CardTitle>
+                </CardHeader>
+                <CardContent className="pt-0">
+                  <ul>
+                    {issues.map((issue) => (
+                      <li
+                        key={issue}
+                        className="flex items-center justify-between border-t border-border py-3 first:border-t-0"
+                      >
+                        <div className="flex items-center gap-2 text-sm">
+                          <AlertCircle className="size-4 text-red-500" />
+                          <span>{issue}</span>
+                        </div>
+                        <ChevronRight className="size-4 text-muted-foreground" />
+                      </li>
+                    ))}
+                  </ul>
+                </CardContent>
+              </Card>
+
+              <Button className="mt-5 h-12 w-full text-base">
+                Quero recuperar esse potencial
+              </Button>
+
+              <p className="mt-4 text-center text-xs text-muted-foreground">
+                Seus dados estao seguros e nao sao compartilhados com terceiros.
+              </p>
+            </>
+          ) : (
+            <Card className="mt-5 border-dashed">
+              <CardContent className="flex flex-col items-center justify-center py-14 text-center">
+                <Search className="size-10 text-muted-foreground" />
+                <h2 className="mt-4 text-2xl font-semibold text-foreground">
+                  Nenhum diagnostico executado ainda
+                </h2>
+                <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
+                  Informe a URL da loja e rode o diagnostico para carregar o
+                  relatorio, os pixels encontrados, os eventos avaliados e os
+                  problemas detectados.
+                </p>
+              </CardContent>
+            </Card>
+          )}
         </main>
       </div>
     </div>
