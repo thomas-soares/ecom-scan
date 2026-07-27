@@ -42,6 +42,7 @@ type ScanData = {
   detections: Array<{
     platform: "META" | "GOOGLE" | "TIKTOK" | "PINTEREST" | "SNAPCHAT";
     isDetected: boolean;
+    evidence?: string | null;
   }>;
   eventValidations: Array<{
     event: "PAGE_VIEW" | "ADD_TO_CART" | "INITIATE_CHECKOUT";
@@ -57,6 +58,7 @@ type ScanData = {
     estimatedMonthlyLossCents: number;
     summary?: {
       loadTimeMs?: number;
+      totalScripts?: number;
     } | null;
   } | null;
 };
@@ -67,6 +69,12 @@ type Stat = {
   note: string;
   icon: ComponentType<{ className?: string }>;
   accent: Accent;
+};
+
+type ExecutionStep = {
+  label: string;
+  detail: string;
+  tone: "default" | "secondary" | "destructive";
 };
 
 const API_BASE_URL =
@@ -211,6 +219,29 @@ function getStatusVariant(
   return "secondary";
 }
 
+function platformLabel(platform: ScanData["detections"][number]["platform"]) {
+  const labels: Record<ScanData["detections"][number]["platform"], string> = {
+    META: "Meta Pixel",
+    GOOGLE: "Google Tags",
+    TIKTOK: "TikTok Pixel",
+    PINTEREST: "Pinterest Tag",
+    SNAPCHAT: "Snap Pixel",
+  };
+
+  return labels[platform];
+}
+
+function eventLabel(event: ScanData["eventValidations"][number]["event"]) {
+  const labels: Record<ScanData["eventValidations"][number]["event"], string> =
+    {
+      PAGE_VIEW: "page_view",
+      ADD_TO_CART: "add_to_cart",
+      INITIATE_CHECKOUT: "initiate_checkout",
+    };
+
+  return labels[event];
+}
+
 export default function Home() {
   const [scanUrl, setScanUrl] = useState(DEFAULT_SCAN_URL);
   const [scan, setScan] = useState<ScanData | null>(null);
@@ -347,6 +378,87 @@ export default function Home() {
     return merged.length > 0
       ? merged
       : ["Nenhum problema critico detectado nesta varredura."];
+  }, [scan]);
+
+  const executionSteps = useMemo<ExecutionStep[]>(() => {
+    if (!scan) {
+      return [
+        {
+          label: "Abrir a URL da loja",
+          detail: "Aguardando o primeiro scan para mostrar o resultado real.",
+          tone: "secondary",
+        },
+        {
+          label: "Capturar HTML e scripts",
+          detail:
+            "HTML, scripts inline e fontes externas ainda nao foram lidos.",
+          tone: "secondary",
+        },
+        {
+          label: "Buscar pixels de anuncio",
+          detail:
+            "Meta, Google, TikTok, Pinterest e Snapchat serao verificados.",
+          tone: "secondary",
+        },
+        {
+          label: "Validar eventos principais",
+          detail:
+            "page_view, add_to_cart e initiate_checkout ainda nao foram testados.",
+          tone: "secondary",
+        },
+      ];
+    }
+
+    const detectionSteps = scan.detections.map((item) => {
+      const found = item.isDetected;
+
+      return {
+        label: `${platformLabel(item.platform)} detectado`,
+        detail: found
+          ? `Encontrado no carregamento inicial${item.evidence ? `: ${item.evidence}` : ""}.`
+          : `Nao encontrado em ${scan.url}.`,
+        tone: found ? "default" : "destructive",
+      } satisfies ExecutionStep;
+    });
+
+    const eventSteps = scan.eventValidations.map((item) => {
+      const passed = item.status === "PASS";
+
+      return {
+        label: `Evento ${eventLabel(item.event)}`,
+        detail: passed
+          ? item.details || "Capturado com sucesso."
+          : item.details || "Nao conseguiu confirmar o disparo desse evento.",
+        tone: passed ? "default" : "destructive",
+      } satisfies ExecutionStep;
+    });
+
+    const performanceStep = scan.report?.summary?.loadTimeMs
+      ? [
+          {
+            label: "Medir tempo de carregamento",
+            detail: `Tempo inicial observado: ${scan.report.summary.loadTimeMs}ms.`,
+            tone:
+              scan.report.summary.loadTimeMs > 5000 ? "destructive" : "default",
+          } satisfies ExecutionStep,
+        ]
+      : [];
+
+    return [
+      {
+        label: "Abrir a URL da loja",
+        detail: `A URL ${scan.url} foi carregada e observada pelo Ecom Scan.`,
+        tone: "default",
+      },
+      {
+        label: "Capturar HTML e scripts",
+        detail: `Foram lidos ${scan.report?.summary?.totalScripts ?? 0} scripts para buscar pixels e tags.`,
+        tone: "default",
+      },
+      ...detectionSteps,
+      ...eventSteps,
+      ...performanceStep,
+    ];
   }, [scan]);
 
   async function fetchScanById(scanId: string) {
@@ -577,6 +689,45 @@ export default function Home() {
               </div>
             </div>
           </section>
+
+          <Card className="mt-5">
+            <CardHeader>
+              <CardTitle>O que o Ecom Scan tentou fazer</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2 pt-0">
+              {executionSteps.map((step) => (
+                <div
+                  key={`${step.label}-${step.detail}`}
+                  className="flex items-start gap-3 rounded-lg border border-border/60 bg-muted/20 px-3 py-2"
+                >
+                  <Badge
+                    variant={
+                      step.tone === "destructive"
+                        ? "destructive"
+                        : step.tone === "default"
+                          ? "default"
+                          : "secondary"
+                    }
+                    className="mt-0.5 shrink-0"
+                  >
+                    {step.tone === "destructive"
+                      ? "Nao achou"
+                      : step.tone === "default"
+                        ? "OK"
+                        : "Pendente"}
+                  </Badge>
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-foreground">
+                      {step.label}
+                    </p>
+                    <p className="text-sm text-muted-foreground">
+                      {step.detail}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </CardContent>
+          </Card>
 
           <Card className="mt-5 border-red-200 bg-red-50/60">
             <CardContent className="flex flex-col gap-4 py-6 sm:flex-row sm:items-center">
