@@ -10,6 +10,8 @@ datasource db {
 enum StorePlatform {
     SHOPIFY
     NUVEMSHOP
+    VTEX
+    TRAY
     OTHER
 }
 

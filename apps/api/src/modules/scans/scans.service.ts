@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
+import { resolveCname } from "node:dns/promises";
 import { ScanStatus, StorePlatform } from "@prisma/client";
 
 import { env } from "../../common/config/env";
@@ -11,15 +12,86 @@ type CreateScanInput = {
   url: string;
 };
 
-function detectStorePlatform(url: string): StorePlatform {
-  const hostname = new URL(url).hostname.toLowerCase();
+function detectStorePlatformFromText(text: string): StorePlatform {
+  const normalizedText = text.toLowerCase();
 
-  if (hostname.includes("nuvemshop") || hostname.includes("tiendanube")) {
+  if (
+    normalizedText.includes("nuvemshop") ||
+    normalizedText.includes("tiendanube")
+  ) {
     return StorePlatform.NUVEMSHOP;
   }
 
-  if (hostname.includes("myshopify")) {
+  if (
+    normalizedText.includes("myshopify") ||
+    normalizedText.includes("cdn.shopify") ||
+    normalizedText.includes("shopify")
+  ) {
     return StorePlatform.SHOPIFY;
+  }
+
+  if (
+    normalizedText.includes("vtex") ||
+    normalizedText.includes("vtexcommercestable") ||
+    normalizedText.includes("vtexassets") ||
+    normalizedText.includes("vteximg")
+  ) {
+    return StorePlatform.VTEX;
+  }
+
+  if (
+    normalizedText.includes("tray") ||
+    normalizedText.includes("traycdn") ||
+    normalizedText.includes("corecommerce") ||
+    normalizedText.includes("x-commerce-hash") ||
+    normalizedText.includes("commercesuite")
+  ) {
+    return StorePlatform.TRAY;
+  }
+
+  return StorePlatform.OTHER;
+}
+
+async function inferStorePlatform(url: string): Promise<StorePlatform> {
+  const hostname = new URL(url).hostname.toLowerCase();
+  const fromHostname = detectStorePlatformFromText(hostname);
+
+  if (fromHostname !== StorePlatform.OTHER) {
+    return fromHostname;
+  }
+
+  try {
+    const response = await fetch(url, {
+      redirect: "follow",
+      headers: {
+        "user-agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36",
+      },
+    });
+    const headerText = Array.from(response.headers.entries())
+      .map(([key, value]) => `${key}: ${value}`)
+      .join("\n");
+    const bodyText = await response.text();
+    const fromResponse = detectStorePlatformFromText(
+      `${response.url}\n${headerText}\n${bodyText}`,
+    );
+
+    if (fromResponse !== StorePlatform.OTHER) {
+      return fromResponse;
+    }
+  } catch {
+    // Ignore HTTP inference errors and fall back to DNS.
+  }
+
+  try {
+    const cnameRecords = await resolveCname(hostname);
+    const fromCname = detectStorePlatformFromText(cnameRecords.join("\n"));
+
+    if (fromCname !== StorePlatform.OTHER) {
+      return fromCname;
+    }
+  } catch {
+    // Ignore DNS errors and keep the fallback below.
   }
 
   return StorePlatform.OTHER;
@@ -31,7 +103,7 @@ export class ScansService {
 
   async createScan(input: CreateScanInput) {
     const normalizedUrl = new URL(input.url).toString();
-    const storePlatform = detectStorePlatform(normalizedUrl);
+    const storePlatform = await inferStorePlatform(normalizedUrl);
     let resolvedStoreId = input.storeId;
 
     if (resolvedStoreId) {
@@ -146,6 +218,13 @@ export class ScansService {
         id: scanId,
       },
       include: {
+        store: {
+          select: {
+            platform: true,
+            name: true,
+            url: true,
+          },
+        },
         detections: true,
         eventValidations: true,
         findings: true,
@@ -155,6 +234,23 @@ export class ScansService {
 
     if (!scan) {
       throw new NotFoundException("Scan not found.");
+    }
+
+    if (scan.store.platform === StorePlatform.OTHER) {
+      const inferredPlatform = await inferStorePlatform(scan.url);
+
+      if (inferredPlatform !== StorePlatform.OTHER) {
+        await this.prisma.store.update({
+          where: {
+            id: scan.storeId,
+          },
+          data: {
+            platform: inferredPlatform,
+          },
+        });
+
+        scan.store.platform = inferredPlatform;
+      }
     }
 
     return scan;

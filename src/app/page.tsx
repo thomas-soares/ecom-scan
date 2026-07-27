@@ -62,6 +62,11 @@ type ScanData = {
       totalScripts?: number;
     } | null;
   } | null;
+  store?: {
+    platform: "SHOPIFY" | "NUVEMSHOP" | "VTEX" | "TRAY" | "OTHER";
+    name: string;
+    url: string;
+  } | null;
 };
 
 type Stat = {
@@ -245,6 +250,24 @@ function eventLabel(event: ScanData["eventValidations"][number]["event"]) {
     };
 
   return labels[event];
+}
+
+function storePlatformLabel(
+  platform?: NonNullable<ScanData["store"]>["platform"] | null,
+) {
+  const labels = {
+    SHOPIFY: "Shopify",
+    NUVEMSHOP: "Nuvemshop",
+    VTEX: "VTEX",
+    TRAY: "Tray",
+    OTHER: "Nao identificado",
+  } as const;
+
+  if (!platform) {
+    return "Nao identificado";
+  }
+
+  return labels[platform];
 }
 
 export default function Home() {
@@ -626,6 +649,10 @@ export default function Home() {
                   </h1>
                   <p className="mt-2 text-sm text-muted-foreground">
                     {scan?.url}
+                  </p>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Plataforma identificada:{" "}
+                    {storePlatformLabel(scan?.store?.platform)}
                   </p>
                   <p className="mt-1 text-sm text-muted-foreground">
                     Analisado em{" "}
