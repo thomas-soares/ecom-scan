@@ -13,11 +13,19 @@ function isEnabled(envValue: string | undefined) {
   return envValue === "true" || envValue === "1";
 }
 
-const disabledPlatforms: DetectionName[] = [
-  ...(isEnabled(process.env.ENABLE_TIKTOK_SCAN) ? [] : ["TIKTOK"]),
-  ...(isEnabled(process.env.ENABLE_PINTEREST_SCAN) ? [] : ["PINTEREST"]),
-  ...(isEnabled(process.env.ENABLE_SNAPCHAT_SCAN) ? [] : ["SNAPCHAT"]),
-];
+const disabledPlatforms: DetectionName[] = [];
+
+if (!isEnabled(process.env.ENABLE_TIKTOK_SCAN)) {
+  disabledPlatforms.push("TIKTOK");
+}
+
+if (!isEnabled(process.env.ENABLE_PINTEREST_SCAN)) {
+  disabledPlatforms.push("PINTEREST");
+}
+
+if (!isEnabled(process.env.ENABLE_SNAPCHAT_SCAN)) {
+  disabledPlatforms.push("SNAPCHAT");
+}
 
 const redisConnection = new IORedis(REDIS_URL, {
   maxRetriesPerRequest: null,
@@ -64,7 +72,7 @@ async function processScan(job: Job<ScanJobData>) {
         platform: d.platform,
         isDetected: d.isDetected,
         evidence: d.evidence,
-        details: d.details ?? null,
+        details: d.details,
       })),
     });
 
