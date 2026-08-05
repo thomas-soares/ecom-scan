@@ -60,6 +60,15 @@ type ScanData = {
     summary?: {
       loadTimeMs?: number;
       totalScripts?: number;
+      domain?: {
+        hostname: string;
+        registrableDomain: string;
+        expiresAt: string | null;
+        daysUntilExpiration: number | null;
+        registrar: string | null;
+        lookupStatus: "FOUND" | "NOT_FOUND" | "FAILED";
+        source: "RDAP";
+      };
     } | null;
   } | null;
   store?: {
@@ -320,6 +329,13 @@ export default function Home() {
       (item) => item.status === "PASS",
     ).length;
     const eventTotal = scan.eventValidations.length || 4;
+    const domain = scan.report?.summary?.domain;
+    const domainDays = domain?.daysUntilExpiration;
+    const hasDomainExpiration = typeof domainDays === "number";
+    const domainExpirationLabel =
+      hasDomainExpiration && domain?.expiresAt
+        ? formatScanTime(domain.expiresAt)
+        : null;
 
     return [
       {
@@ -346,10 +362,12 @@ export default function Home() {
       },
       {
         title: "Dominio",
-        value: "N/D",
-        note: "Informacao de expiracao de dominio sera adicionada nas proximas versoes.",
+        value: hasDomainExpiration ? `${domainDays} dias` : "N/D",
+        note: domainExpirationLabel
+          ? `Expira em ${domainExpirationLabel} via consulta RDAP.`
+          : "Nao foi possivel confirmar a expiracao do dominio via RDAP.",
         icon: Globe,
-        accent: "amber",
+        accent: hasDomainExpiration && domainDays <= 30 ? "red" : "amber",
       },
     ];
   }, [scan]);

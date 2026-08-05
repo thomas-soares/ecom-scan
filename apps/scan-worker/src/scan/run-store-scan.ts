@@ -32,6 +32,15 @@ export type ScanOutput = {
   summary: {
     totalScripts: number;
     loadTimeMs: number;
+    domain: {
+      hostname: string;
+      registrableDomain: string;
+      expiresAt: string | null;
+      daysUntilExpiration: number | null;
+      registrar: string | null;
+      lookupStatus: "FOUND" | "NOT_FOUND" | "FAILED";
+      source: "RDAP";
+    };
   };
 };
 
@@ -46,6 +55,183 @@ const detectionRules: Record<DetectionName, RegExp> = {
 export type ScanOptions = {
   disabledPlatforms?: DetectionName[];
 };
+
+type RdapBootstrapResponse = {
+  services?: Array<[string[], string[]]>;
+};
+
+type RdapDomainResponse = {
+  events?: Array<{
+    eventAction?: string;
+    eventDate?: string;
+  }>;
+  entities?: Array<{
+    roles?: string[];
+    vcardArray?: [
+      string,
+      Array<[string, Record<string, unknown>, string, string]>,
+    ];
+  }>;
+};
+
+const COMMON_SECOND_LEVEL_SUFFIXES = new Set([
+  "com.br",
+  "net.br",
+  "org.br",
+  "ind.br",
+  "inf.br",
+  "eco.br",
+  "app.br",
+  "dev.br",
+  "blog.br",
+  "shop.br",
+  "store.br",
+  "co.uk",
+  "com.au",
+  "com.ar",
+  "com.mx",
+  "com.co",
+]);
+
+function getRegistrableDomain(hostname: string) {
+  const normalizedHostname = hostname
+    .toLowerCase()
+    .replace(/\.$/, "")
+    .replace(/^www\./, "");
+  const parts = normalizedHostname.split(".").filter(Boolean);
+
+  if (parts.length < 2) {
+    return normalizedHostname;
+  }
+
+  const twoPartSuffix = parts.slice(-2).join(".");
+
+  if (parts.length >= 3 && COMMON_SECOND_LEVEL_SUFFIXES.has(twoPartSuffix)) {
+    return parts.slice(-3).join(".");
+  }
+
+  return parts.slice(-2).join(".");
+}
+
+async function fetchJson<T>(url: string, timeoutMs = 6000): Promise<T> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(url, {
+      signal: controller.signal,
+      headers: {
+        accept: "application/json",
+        "user-agent": "EcomScan/0.1 RDAP lookup",
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`RDAP request failed with ${response.status}`);
+    }
+
+    return (await response.json()) as T;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function findRdapBaseUrl(
+  bootstrap: RdapBootstrapResponse,
+  topLevelDomain: string,
+) {
+  const service = bootstrap.services?.find(([tlds]) =>
+    tlds.some((tld) => tld.toLowerCase() === topLevelDomain),
+  );
+
+  return service?.[1]?.[0] ?? null;
+}
+
+function getRegistrarName(domain: RdapDomainResponse) {
+  const registrarEntity = domain.entities?.find((entity) =>
+    entity.roles?.some((role) => role.toLowerCase() === "registrar"),
+  );
+  const vcardItems = registrarEntity?.vcardArray?.[1] ?? [];
+  const nameItem = vcardItems.find(([key]) => key.toLowerCase() === "fn");
+
+  return nameItem?.[3] ?? null;
+}
+
+function getExpirationDate(domain: RdapDomainResponse) {
+  const expirationEvent = domain.events?.find((event) => {
+    const action = event.eventAction?.toLowerCase() ?? "";
+
+    return action === "expiration" || action === "expiry";
+  });
+
+  if (!expirationEvent?.eventDate) {
+    return null;
+  }
+
+  const expiresAt = new Date(expirationEvent.eventDate);
+
+  if (Number.isNaN(expiresAt.getTime())) {
+    return null;
+  }
+
+  return expiresAt;
+}
+
+async function lookupDomainExpiration(url: string): Promise<
+  ScanOutput["summary"]["domain"]
+> {
+  const hostname = new URL(url).hostname;
+  const registrableDomain = getRegistrableDomain(hostname);
+  const topLevelDomain = registrableDomain.split(".").at(-1);
+  const fallback = {
+    hostname,
+    registrableDomain,
+    expiresAt: null,
+    daysUntilExpiration: null,
+    registrar: null,
+    lookupStatus: "FAILED" as const,
+    source: "RDAP" as const,
+  };
+
+  if (!topLevelDomain) {
+    return fallback;
+  }
+
+  try {
+    const bootstrap = await fetchJson<RdapBootstrapResponse>(
+      "https://data.iana.org/rdap/dns.json",
+    );
+    const rdapBaseUrl = findRdapBaseUrl(bootstrap, topLevelDomain);
+
+    if (!rdapBaseUrl) {
+      return {
+        ...fallback,
+        lookupStatus: "NOT_FOUND",
+      };
+    }
+
+    const domainUrl = new URL(
+      `domain/${encodeURIComponent(registrableDomain)}`,
+      rdapBaseUrl.endsWith("/") ? rdapBaseUrl : `${rdapBaseUrl}/`,
+    );
+    const domain = await fetchJson<RdapDomainResponse>(domainUrl.toString());
+    const expiresAt = getExpirationDate(domain);
+
+    return {
+      hostname,
+      registrableDomain,
+      expiresAt: expiresAt?.toISOString() ?? null,
+      daysUntilExpiration: expiresAt
+        ? Math.ceil((expiresAt.getTime() - Date.now()) / 86_400_000)
+        : null,
+      registrar: getRegistrarName(domain),
+      lookupStatus: expiresAt ? "FOUND" : "NOT_FOUND",
+      source: "RDAP",
+    };
+  } catch {
+    return fallback;
+  }
+}
 
 export async function runStoreScan(
   url: string,
@@ -94,19 +280,19 @@ export async function runStoreScan(
       event: "PAGE_VIEW",
       status: detections.some((d) => d.isDetected) ? "PASS" : "WARNING",
       details:
-        "Eventos inferidos via presença de scripts/pixels. Em breve, validação ativa de disparo em fluxo de compra.",
+        "Eventos inferidos via presenca de scripts/pixels. Em breve, validacao ativa de disparo em fluxo de compra.",
     },
     {
       event: "ADD_TO_CART",
       status: "WARNING",
       details:
-        "Validação completa depende de navegação guiada e interceptação de requests durante interação.",
+        "Validacao completa depende de navegacao guiada e interceptacao de requests durante interacao.",
     },
     {
       event: "INITIATE_CHECKOUT",
       status: "WARNING",
       details:
-        "Validação completa depende de simulação do checkout em ambiente controlado.",
+        "Validacao completa depende de simulacao do checkout em ambiente controlado.",
     },
   ];
 
@@ -130,7 +316,7 @@ export async function runStoreScan(
       severity: "HIGH",
       title: "Tempo inicial de carregamento elevado",
       description:
-        "A página demorou mais de 5s para estabilizar o carregamento inicial.",
+        "A pagina demorou mais de 5s para estabilizar o carregamento inicial.",
       impactScore: 18,
     });
   }
@@ -139,6 +325,7 @@ export async function runStoreScan(
     (sum, finding) => sum + finding.impactScore * 5000,
     0,
   );
+  const domain = await lookupDomainExpiration(url);
 
   return {
     detections,
@@ -148,6 +335,7 @@ export async function runStoreScan(
     summary: {
       totalScripts: scripts.length,
       loadTimeMs,
+      domain,
     },
   };
 }
