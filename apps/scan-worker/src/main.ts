@@ -1,6 +1,11 @@
 import "dotenv/config";
 
-import { PrismaClient, ScanStatus, ValidationStatus } from "@prisma/client";
+import {
+  Prisma,
+  PrismaClient,
+  ScanStatus,
+  ValidationStatus,
+} from "@prisma/client";
 import { Job, Worker } from "bullmq";
 import IORedis from "ioredis";
 
@@ -72,7 +77,7 @@ async function processScan(job: Job<ScanJobData>) {
         platform: d.platform,
         isDetected: d.isDetected,
         evidence: d.evidence,
-        details: d.details,
+        details: d.details as Prisma.InputJsonValue | undefined,
       })),
     });
 
@@ -85,6 +90,7 @@ async function processScan(job: Job<ScanJobData>) {
             ? ValidationStatus.PASS
             : ValidationStatus.WARNING,
         details: e.details,
+        metadata: e.metadata as Prisma.InputJsonValue | undefined,
       })),
     });
 
@@ -130,12 +136,10 @@ const worker = new Worker<ScanJobData>(SCANS_QUEUE_NAME, processScan, {
 });
 
 worker.on("completed", (job) => {
-  // eslint-disable-next-line no-console
   console.log(`scan completed: ${job.id}`);
 });
 
 worker.on("failed", async (job, error) => {
-  // eslint-disable-next-line no-console
   console.error(`scan failed: ${job?.id}`, error.message);
 
   if (!job) {
@@ -153,9 +157,7 @@ worker.on("failed", async (job, error) => {
 });
 
 worker.on("error", (error) => {
-  // eslint-disable-next-line no-console
   console.error("worker error", error.message);
 });
 
-// eslint-disable-next-line no-console
 console.log("Scan worker started.");
