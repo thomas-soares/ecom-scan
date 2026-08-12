@@ -91,15 +91,20 @@ type ScanData = {
       };
       ecommerce?: {
         detected: boolean;
+        platform?: "SHOPIFY" | "NUVEMSHOP" | "VTEX" | "TRAY" | "OTHER";
         productHandle: string | null;
         productUrl: string | null;
         checkoutUrl: string | null;
+        addToCartMethod?: string | null;
+        checkoutMethod?: string | null;
       };
       shopify?: {
         detected: boolean;
         productHandle: string | null;
         productUrl: string | null;
         checkoutUrl: string | null;
+        addToCartMethod?: string | null;
+        checkoutMethod?: string | null;
       };
       performance?: {
         ttfbMs: number | null;
@@ -128,6 +133,7 @@ type ScanData = {
           platform: Platform;
           url: string;
           event: string | null;
+          payloadQuality?: "complete" | "partial" | "missing";
         }>;
       };
       lossAssumptions?: {
@@ -516,6 +522,8 @@ export default function Home() {
   const [scanUrl, setScanUrl] = useState(DEFAULT_SCAN_URL);
   const [scan, setScan] = useState<ScanData | null>(null);
   const [history, setHistory] = useState<HistoryScan[]>([]);
+  const [historySearch, setHistorySearch] = useState("");
+  const [historyStatusFilter, setHistoryStatusFilter] = useState<ScanStatus | "ALL">("ALL");
   const [activeScanId, setActiveScanId] = useState<string | null>(null);
   const [scanStatus, setScanStatus] = useState<ScanStatus | null>(null);
   const [detectedPlatform, setDetectedPlatform] = useState<
@@ -526,6 +534,9 @@ export default function Home() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [noticeMessage, setNoticeMessage] = useState<string | null>(null);
   const [shareMessage, setShareMessage] = useState<string | null>(null);
+  const [monthlyTraffic, setMonthlyTraffic] = useState("30000");
+  const [averageOrderValue, setAverageOrderValue] = useState("180");
+  const [baseConversionRate, setBaseConversionRate] = useState("1.8");
   const isPolling =
     Boolean(activeScanId) &&
     (scanStatus === "QUEUED" || scanStatus === "RUNNING");
@@ -606,6 +617,21 @@ export default function Home() {
     ];
   }, [scan, summary]);
 
+  const filteredHistory = useMemo(() => {
+    const normalizedSearch = historySearch.trim().toLowerCase();
+
+    return history.filter((item) => {
+      const matchesSearch =
+        !normalizedSearch ||
+        item.url.toLowerCase().includes(normalizedSearch) ||
+        storePlatformLabel(item.store?.platform).toLowerCase().includes(normalizedSearch);
+      const matchesStatus =
+        historyStatusFilter === "ALL" || item.status === historyStatusFilter;
+
+      return matchesSearch && matchesStatus;
+    });
+  }, [history, historySearch, historyStatusFilter]);
+
   async function loadHistory() {
     setIsHistoryLoading(true);
 
@@ -671,6 +697,15 @@ export default function Home() {
         },
         body: JSON.stringify({
           url: trimmedUrl,
+          monthlyTraffic: Math.max(0, Number(monthlyTraffic) || 0),
+          averageOrderValueCents: Math.max(
+            0,
+            Math.round((Number(averageOrderValue.replace(",", ".")) || 0) * 100),
+          ),
+          baseConversionRate: Math.max(
+            0,
+            (Number(baseConversionRate.replace(",", ".")) || 0) / 100,
+          ),
         }),
       });
 
@@ -843,6 +878,35 @@ export default function Home() {
                     placeholder="https://sualoja.com"
                   />
                 </div>
+                <div className="grid gap-3 sm:grid-cols-3">
+                  <div className="grid gap-2">
+                    <Label htmlFor="monthly-traffic">Visitas/mês</Label>
+                    <Input
+                      id="monthly-traffic"
+                      inputMode="numeric"
+                      value={monthlyTraffic}
+                      onChange={(event) => setMonthlyTraffic(event.target.value)}
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label htmlFor="average-order-value">Ticket médio</Label>
+                    <Input
+                      id="average-order-value"
+                      inputMode="decimal"
+                      value={averageOrderValue}
+                      onChange={(event) => setAverageOrderValue(event.target.value)}
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label htmlFor="base-conversion-rate">Conversão %</Label>
+                    <Input
+                      id="base-conversion-rate"
+                      inputMode="decimal"
+                      value={baseConversionRate}
+                      onChange={(event) => setBaseConversionRate(event.target.value)}
+                    />
+                  </div>
+                </div>
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                   <Button onClick={handleRunScan} disabled={isSubmitting || isPolling}>
                     {isSubmitting ? (
@@ -890,10 +954,32 @@ export default function Home() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-2">
+                <div className="grid gap-2 sm:grid-cols-[1fr_150px]">
+                  <Input
+                    value={historySearch}
+                    onChange={(event) => setHistorySearch(event.target.value)}
+                    placeholder="Buscar por URL ou plataforma"
+                  />
+                  <select
+                    className="h-8 rounded-lg border border-input bg-background px-2 text-sm"
+                    value={historyStatusFilter}
+                    onChange={(event) =>
+                      setHistoryStatusFilter(event.target.value as ScanStatus | "ALL")
+                    }
+                  >
+                    <option value="ALL">Todos</option>
+                    <option value="COMPLETED">Concluidos</option>
+                    <option value="RUNNING">Em execucao</option>
+                    <option value="QUEUED">Na fila</option>
+                    <option value="FAILED">Falhos</option>
+                  </select>
+                </div>
                 {history.length === 0 ? (
                   <p className="text-sm text-muted-foreground">Nenhum scan salvo para este usuario.</p>
+                ) : filteredHistory.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">Nenhum item corresponde aos filtros.</p>
                 ) : (
-                  history.slice(0, 6).map((item) => (
+                  filteredHistory.slice(0, 8).map((item) => (
                     <button
                       key={item.id}
                       className="flex w-full items-center justify-between gap-3 rounded-lg border border-border px-3 py-2 text-left hover:bg-muted"
@@ -989,6 +1075,41 @@ export default function Home() {
                 </Card>
               ) : (
                 <>
+              <Card>
+                <CardHeader>
+                  <CardTitle>Resumo executivo</CardTitle>
+                </CardHeader>
+                <CardContent className="grid gap-4 md:grid-cols-3">
+                  <div>
+                    <p className="text-sm text-muted-foreground">Prioridade</p>
+                    <p className="mt-1 text-xl font-semibold">
+                      {scan.findings.some((finding) => finding.severity === "HIGH")
+                        ? "Correcao urgente"
+                        : scan.findings.length > 0
+                          ? "Otimizar proximos passos"
+                          : "Monitorar"}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Tracking</p>
+                    <p className="mt-1 text-xl font-semibold">
+                      {scan.eventValidations.filter((event) => event.status === "PASS").length}/
+                      {scan.eventValidations.length} eventos OK
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Primeira acao</p>
+                    <p className="mt-1 text-xl font-semibold">
+                      {scan.findings[0]?.title ?? "Sem acao critica"}
+                    </p>
+                  </div>
+                  <p className="md:col-span-3 text-sm text-muted-foreground">
+                    Use este relatorio para priorizar correcoes que afetam mensuracao,
+                    velocidade e caminho de compra antes de investir mais trafego pago.
+                  </p>
+                </CardContent>
+              </Card>
+
               <Card className="border-red-200 bg-red-50/60">
                 <CardContent className="flex flex-col gap-4 py-6 sm:flex-row sm:items-center">
                   <div className="grid size-16 place-items-center rounded-full border border-red-300 bg-white text-red-600">
@@ -1003,6 +1124,38 @@ export default function Home() {
                       Premissa: {summary?.lossAssumptions?.monthlyTraffic.toLocaleString("pt-BR") ?? "30.000"} visitas/m,
                       ticket medio {centsToCurrency(summary?.lossAssumptions?.averageOrderValueCents ?? 18000)}
                       e queda estimada de conversao por severidade.
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>Premissas da estimativa</CardTitle>
+                </CardHeader>
+                <CardContent className="grid gap-4 sm:grid-cols-4">
+                  <div>
+                    <p className="text-sm text-muted-foreground">Visitas/mês</p>
+                    <p className="text-xl font-semibold">
+                      {(summary?.lossAssumptions?.monthlyTraffic ?? 30000).toLocaleString("pt-BR")}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Ticket médio</p>
+                    <p className="text-xl font-semibold">
+                      {centsToCurrency(summary?.lossAssumptions?.averageOrderValueCents ?? 18000)}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Conversão base</p>
+                    <p className="text-xl font-semibold">
+                      {((summary?.lossAssumptions?.baseConversionRate ?? 0.018) * 100).toFixed(2)}%
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Queda estimada</p>
+                    <p className="text-xl font-semibold">
+                      {((summary?.lossAssumptions?.severityConversionDrag ?? 0) * 100).toFixed(2)} p.p.
                     </p>
                   </div>
                 </CardContent>
@@ -1082,7 +1235,14 @@ export default function Home() {
                           <AlertCircle className="mt-0.5 size-5 text-amber-600" />
                         )}
                         <div>
-                          <p className="font-medium">{eventLabel(item.event)}</p>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <p className="font-medium">{eventLabel(item.event)}</p>
+                            {typeof item.metadata?.payloadQuality === "string" && (
+                              <Badge variant={item.metadata.payloadQuality === "complete" ? "default" : "secondary"}>
+                                Payload {item.metadata.payloadQuality}
+                              </Badge>
+                            )}
+                          </div>
                           <p className="text-sm text-muted-foreground">
                             {item.details || "Sem detalhe retornado pelo worker."}
                           </p>
@@ -1142,6 +1302,18 @@ export default function Home() {
                       <span className="text-muted-foreground">Checkout observado</span>
                       <span className="max-w-[220px] truncate font-medium">
                         {ecommerceFlow?.checkoutUrl ? "Sim" : "Nao"}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between border-b border-border pb-2">
+                      <span className="text-muted-foreground">Add to cart</span>
+                      <span className="max-w-[220px] truncate font-medium">
+                        {ecommerceFlow?.addToCartMethod ? "Interagiu" : "Nao confirmado"}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between border-b border-border pb-2">
+                      <span className="text-muted-foreground">Metodo checkout</span>
+                      <span className="max-w-[220px] truncate font-medium">
+                        {ecommerceFlow?.checkoutMethod ? "Interagiu" : "Nao confirmado"}
                       </span>
                     </div>
                     <div className="flex items-center justify-between border-b border-border pb-2">

@@ -65,3 +65,30 @@ body {
   color: var(--foreground);
   font-family: var(--font-geist-sans), "Segoe UI", sans-serif;
 }
+
+@media print {
+  body {
+    background: #ffffff;
+  }
+
+  aside,
+  header,
+  #diagnostico,
+  #historico,
+  button {
+    display: none !important;
+  }
+
+  main {
+    padding: 0 !important;
+  }
+
+  #relatorio {
+    margin: 0 !important;
+  }
+
+  #relatorio .shadow-sm,
+  #relatorio [class*="shadow"] {
+    box-shadow: none !important;
+  }
+}
