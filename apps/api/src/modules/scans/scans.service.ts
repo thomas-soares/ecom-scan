@@ -17,6 +17,75 @@ type CreateScanInput = {
   };
 };
 
+type FinancialAssumptions = NonNullable<CreateScanInput["financialAssumptions"]>;
+
+function normalizeFinancialAssumptions(
+  assumptions: FinancialAssumptions | undefined,
+) {
+  return {
+    monthlyTraffic: Math.max(0, assumptions?.monthlyTraffic ?? 30000),
+    averageOrderValueCents: Math.max(
+      0,
+      assumptions?.averageOrderValueCents ?? 18000,
+    ),
+    baseConversionRate: Math.max(
+      0,
+      Math.min(1, assumptions?.baseConversionRate ?? 0.018),
+    ),
+  };
+}
+
+function getSummaryLossAssumptions(summary: unknown) {
+  if (!summary || typeof summary !== "object" || Array.isArray(summary)) {
+    return null;
+  }
+
+  const lossAssumptions = (summary as { lossAssumptions?: unknown })
+    .lossAssumptions;
+
+  if (
+    !lossAssumptions ||
+    typeof lossAssumptions !== "object" ||
+    Array.isArray(lossAssumptions)
+  ) {
+    return null;
+  }
+
+  const candidate = lossAssumptions as Record<string, unknown>;
+  const monthlyTraffic = Number(candidate.monthlyTraffic);
+  const averageOrderValueCents = Number(candidate.averageOrderValueCents);
+  const baseConversionRate = Number(candidate.baseConversionRate);
+
+  if (
+    !Number.isFinite(monthlyTraffic) ||
+    !Number.isFinite(averageOrderValueCents) ||
+    !Number.isFinite(baseConversionRate)
+  ) {
+    return null;
+  }
+
+  return {
+    monthlyTraffic,
+    averageOrderValueCents,
+    baseConversionRate,
+  };
+}
+
+function financialAssumptionsMatch(
+  current: ReturnType<typeof normalizeFinancialAssumptions>,
+  previous: ReturnType<typeof normalizeFinancialAssumptions> | null,
+) {
+  if (!previous) {
+    return false;
+  }
+
+  return (
+    current.monthlyTraffic === previous.monthlyTraffic &&
+    current.averageOrderValueCents === previous.averageOrderValueCents &&
+    Math.abs(current.baseConversionRate - previous.baseConversionRate) < 0.000001
+  );
+}
+
 function detectStorePlatformFromText(text: string): StorePlatform {
   const normalizedText = text.toLowerCase();
 
@@ -161,6 +230,9 @@ export class ScansService {
 
     const normalizedUrl = new URL(input.url).toString();
     const storePlatform = await inferStorePlatform(normalizedUrl);
+    const financialAssumptions = normalizeFinancialAssumptions(
+      input.financialAssumptions,
+    );
     assertScannableUrl(normalizedUrl);
     let resolvedStoreId = input.storeId;
 
@@ -222,10 +294,22 @@ export class ScansService {
           id: true,
           status: true,
           finishedAt: true,
+          report: {
+            select: {
+              summary: true,
+            },
+          },
         },
       });
 
-      if (recentScan) {
+      const recentScanAssumptions = getSummaryLossAssumptions(
+        recentScan?.report?.summary,
+      );
+
+      if (
+        recentScan &&
+        financialAssumptionsMatch(financialAssumptions, recentScanAssumptions)
+      ) {
         return {
           scanId: recentScan.id,
           status: recentScan.status,
@@ -233,7 +317,7 @@ export class ScansService {
           reused: true,
           reusedFinishedAt: recentScan.finishedAt,
           reuseWindowMinutes: env.RECENT_SCAN_REUSE_WINDOW_MINUTES,
-          message: `Ja existe um diagnostico concluido para esta URL nos ultimos ${env.RECENT_SCAN_REUSE_WINDOW_MINUTES} minutos. O resultado do historico foi reutilizado.`,
+          message: `Ja existe um diagnostico concluido para esta URL nos ultimos ${env.RECENT_SCAN_REUSE_WINDOW_MINUTES} minutos com as mesmas premissas financeiras. O resultado do historico foi reutilizado.`,
         };
       }
     }
@@ -259,7 +343,7 @@ export class ScansService {
         storeId: resolvedStoreId,
         url: normalizedUrl,
         storePlatform,
-        financialAssumptions: input.financialAssumptions,
+        financialAssumptions,
       },
       {
         attempts: 4,
