@@ -7,6 +7,11 @@ import { ScansService } from "./scans.service";
 export class ScansController {
   constructor(private readonly scansService: ScansService) {}
 
+  @Get()
+  async listScans(@Headers("x-user-id") userId?: string) {
+    return this.scansService.listScans(userId);
+  }
+
   @Post()
   async createScan(
     @Body() body: CreateScanDto,
@@ -20,7 +25,10 @@ export class ScansController {
   }
 
   @Get(":scanId")
-  async getScan(@Param("scanId") scanId: string) {
-    return this.scansService.getScanById(scanId);
+  async getScan(
+    @Param("scanId") scanId: string,
+    @Headers("x-user-id") userId?: string,
+  ) {
+    return this.scansService.getScanById(scanId, userId);
   }
 }

@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Injectable, NotFoundException, UnauthorizedException } from "@nestjs/common";
 import { resolveCname } from "node:dns/promises";
 import { ScanStatus, StorePlatform } from "@prisma/client";
 
@@ -17,7 +17,11 @@ function detectStorePlatformFromText(text: string): StorePlatform {
 
   if (
     normalizedText.includes("nuvemshop") ||
-    normalizedText.includes("tiendanube")
+    normalizedText.includes("tiendanube") ||
+    normalizedText.includes("nuvem shop") ||
+    normalizedText.includes("cdn.nuvemshop.com.br") ||
+    normalizedText.includes("d26lpennugtm8s.cloudfront.net") ||
+    normalizedText.includes("ls.store")
   ) {
     return StorePlatform.NUVEMSHOP;
   }
@@ -25,7 +29,9 @@ function detectStorePlatformFromText(text: string): StorePlatform {
   if (
     normalizedText.includes("myshopify") ||
     normalizedText.includes("cdn.shopify") ||
-    normalizedText.includes("shopify")
+    normalizedText.includes("shopify") ||
+    normalizedText.includes("shopifyanalytics") ||
+    normalizedText.includes("x-shopify")
   ) {
     return StorePlatform.SHOPIFY;
   }
@@ -34,7 +40,10 @@ function detectStorePlatformFromText(text: string): StorePlatform {
     normalizedText.includes("vtex") ||
     normalizedText.includes("vtexcommercestable") ||
     normalizedText.includes("vtexassets") ||
-    normalizedText.includes("vteximg")
+    normalizedText.includes("vteximg") ||
+    normalizedText.includes("vtex.render-runtime") ||
+    normalizedText.includes("io.vtex") ||
+    normalizedText.includes("checkout.vtex.com")
   ) {
     return StorePlatform.VTEX;
   }
@@ -44,7 +53,10 @@ function detectStorePlatformFromText(text: string): StorePlatform {
     normalizedText.includes("traycdn") ||
     normalizedText.includes("corecommerce") ||
     normalizedText.includes("x-commerce-hash") ||
-    normalizedText.includes("commercesuite")
+    normalizedText.includes("commercesuite") ||
+    normalizedText.includes("traycommerce") ||
+    normalizedText.includes("tray checkout") ||
+    normalizedText.includes("traycheckout")
   ) {
     return StorePlatform.TRAY;
   }
@@ -97,13 +109,54 @@ async function inferStorePlatform(url: string): Promise<StorePlatform> {
   return StorePlatform.OTHER;
 }
 
+function assertAuthenticated(userId?: string) {
+  if (!userId) {
+    throw new UnauthorizedException("User is required.");
+  }
+}
+
+function assertScannableUrl(url: string) {
+  const protocol = new URL(url).protocol;
+
+  if (protocol !== "http:" && protocol !== "https:") {
+    throw new BadRequestException("Informe uma URL http ou https.");
+  }
+}
+
 @Injectable()
 export class ScansService {
   constructor(private readonly prisma: PrismaService) {}
 
+  async listScans(userId?: string) {
+    assertAuthenticated(userId);
+
+    return this.prisma.scan.findMany({
+      where: {
+        requestedByUserId: userId,
+      },
+      orderBy: {
+        queuedAt: "desc",
+      },
+      take: 25,
+      include: {
+        store: {
+          select: {
+            platform: true,
+            name: true,
+            url: true,
+          },
+        },
+        report: true,
+      },
+    });
+  }
+
   async createScan(input: CreateScanInput) {
+    assertAuthenticated(input.userId);
+
     const normalizedUrl = new URL(input.url).toString();
     const storePlatform = await inferStorePlatform(normalizedUrl);
+    assertScannableUrl(normalizedUrl);
     let resolvedStoreId = input.storeId;
 
     if (resolvedStoreId) {
@@ -150,6 +203,7 @@ export class ScansService {
       where: {
         storeId: resolvedStoreId,
         url: normalizedUrl,
+        requestedByUserId: input.userId,
         status: ScanStatus.COMPLETED,
         finishedAt: {
           gte: cacheWindowStart,
@@ -169,6 +223,7 @@ export class ScansService {
       return {
         scanId: cachedScan.id,
         status: cachedScan.status,
+        platform: storePlatform,
         reused: true,
       };
     }
@@ -208,14 +263,18 @@ export class ScansService {
     return {
       scanId: scan.id,
       status: scan.status,
+      platform: storePlatform,
       reused: false,
     };
   }
 
-  async getScanById(scanId: string) {
+  async getScanById(scanId: string, userId?: string) {
+    assertAuthenticated(userId);
+
     const scan = await this.prisma.scan.findFirst({
       where: {
         id: scanId,
+        requestedByUserId: userId,
       },
       include: {
         store: {
