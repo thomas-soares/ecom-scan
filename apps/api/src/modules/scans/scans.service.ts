@@ -195,37 +195,42 @@ export class ScansService {
       resolvedStoreId = store.id;
     }
 
-    const cacheWindowStart = new Date(
-      Date.now() - env.SCAN_CACHE_TTL_HOURS * 60 * 60 * 1000,
-    );
+    if (env.ENABLE_RECENT_SCAN_REUSE) {
+      const reuseWindowStart = new Date(
+        Date.now() - env.RECENT_SCAN_REUSE_WINDOW_MINUTES * 60 * 1000,
+      );
 
-    const cachedScan = await this.prisma.scan.findFirst({
-      where: {
-        storeId: resolvedStoreId,
-        url: normalizedUrl,
-        requestedByUserId: input.userId,
-        status: ScanStatus.COMPLETED,
-        finishedAt: {
-          gte: cacheWindowStart,
+      const recentScan = await this.prisma.scan.findFirst({
+        where: {
+          storeId: resolvedStoreId,
+          url: normalizedUrl,
+          requestedByUserId: input.userId,
+          status: ScanStatus.COMPLETED,
+          finishedAt: {
+            gte: reuseWindowStart,
+          },
         },
-      },
-      orderBy: {
-        finishedAt: "desc",
-      },
-      select: {
-        id: true,
-        status: true,
-        finishedAt: true,
-      },
-    });
+        orderBy: {
+          finishedAt: "desc",
+        },
+        select: {
+          id: true,
+          status: true,
+          finishedAt: true,
+        },
+      });
 
-    if (cachedScan) {
-      return {
-        scanId: cachedScan.id,
-        status: cachedScan.status,
-        platform: storePlatform,
-        reused: true,
-      };
+      if (recentScan) {
+        return {
+          scanId: recentScan.id,
+          status: recentScan.status,
+          platform: storePlatform,
+          reused: true,
+          reusedFinishedAt: recentScan.finishedAt,
+          reuseWindowMinutes: env.RECENT_SCAN_REUSE_WINDOW_MINUTES,
+          message: `Ja existe um diagnostico concluido para esta URL nos ultimos ${env.RECENT_SCAN_REUSE_WINDOW_MINUTES} minutos. O resultado do historico foi reutilizado.`,
+        };
+      }
     }
 
     const scan = await this.prisma.scan.create({
@@ -265,6 +270,7 @@ export class ScansService {
       status: scan.status,
       platform: storePlatform,
       reused: false,
+      message: null,
     };
   }
 

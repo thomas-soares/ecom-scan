@@ -524,6 +524,7 @@ export default function Home() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isHistoryLoading, setIsHistoryLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [noticeMessage, setNoticeMessage] = useState<string | null>(null);
   const [shareMessage, setShareMessage] = useState<string | null>(null);
   const isPolling =
     Boolean(activeScanId) &&
@@ -659,6 +660,7 @@ export default function Home() {
 
     setIsSubmitting(true);
     setErrorMessage(null);
+    setNoticeMessage(null);
     setShareMessage(null);
 
     try {
@@ -682,11 +684,14 @@ export default function Home() {
         scanId: string;
         status: ScanStatus;
         platform?: NonNullable<ScanData["store"]>["platform"];
+        reused?: boolean;
+        message?: string | null;
       };
 
       setActiveScanId(data.scanId);
       setScanStatus(data.status);
       setDetectedPlatform(data.platform ?? null);
+      setNoticeMessage(data.reused ? data.message || "Diagnostico recente reutilizado do historico." : null);
       window.history.replaceState(null, "", `?scanId=${data.scanId}`);
       await fetchScanById(data.scanId);
       await loadHistory();
@@ -873,6 +878,7 @@ export default function Home() {
                   <Progress value={scanStatus === "QUEUED" ? 35 : 72} />
                 )}
                 {errorMessage && <p className="text-sm text-destructive">{errorMessage}</p>}
+                {noticeMessage && <p className="text-sm text-primary">{noticeMessage}</p>}
               </CardContent>
             </Card>
 
@@ -892,6 +898,7 @@ export default function Home() {
                       key={item.id}
                       className="flex w-full items-center justify-between gap-3 rounded-lg border border-border px-3 py-2 text-left hover:bg-muted"
                       onClick={() => {
+                        setNoticeMessage(null);
                         setActiveScanId(item.id);
                         window.history.replaceState(null, "", `?scanId=${item.id}`);
                         void fetchScanById(item.id);
