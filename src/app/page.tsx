@@ -159,7 +159,7 @@ type Stat = {
 };
 
 const POLL_INTERVAL_MS = 2200;
-const DEFAULT_SCAN_URL = "https://";
+const DEFAULT_SCAN_URL = "";
 
 function mapApiError(error: unknown, fallbackMessage: string) {
   if (error instanceof TypeError) {
@@ -652,7 +652,7 @@ export default function Home() {
   async function handleRunScan() {
     const trimmedUrl = scanUrl.trim();
 
-    if (!trimmedUrl || trimmedUrl === "https://") {
+    if (!trimmedUrl) {
       setErrorMessage("Informe a URL completa de uma loja suportada.");
       return;
     }
@@ -857,7 +857,11 @@ export default function Home() {
                       </>
                     )}
                   </Button>
-                  <Badge variant={statusVariant(scanStatus)}>{statusLabel(scanStatus)}</Badge>
+                  {scanStatus && (
+                    <Badge variant={statusVariant(scanStatus)}>
+                      {statusLabel(scanStatus)}
+                    </Badge>
+                  )}
                   {detectedPlatform && (
                     <Badge variant="secondary">
                       Plataforma: {storePlatformLabel(detectedPlatform)}
