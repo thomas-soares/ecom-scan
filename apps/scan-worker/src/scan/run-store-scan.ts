@@ -10,6 +10,13 @@ export type DetectionName =
 export type EventName = "PAGE_VIEW" | "ADD_TO_CART" | "INITIATE_CHECKOUT";
 
 type ValidationState = "PASS" | "WARNING";
+type StorePlatformName = "SHOPIFY" | "NUVEMSHOP" | "VTEX" | "TRAY" | "OTHER";
+
+type FinancialAssumptions = {
+  monthlyTraffic?: number;
+  averageOrderValueCents?: number;
+  baseConversionRate?: number;
+};
 
 export type ScanOutput = {
   detections: Array<{
@@ -46,9 +53,12 @@ export type ScanOutput = {
     };
     ecommerce: {
       detected: boolean;
+      platform: StorePlatformName;
       productHandle: string | null;
       productUrl: string | null;
       checkoutUrl: string | null;
+      addToCartMethod: string | null;
+      checkoutMethod: string | null;
     };
     performance: {
       ttfbMs: number | null;
@@ -77,6 +87,7 @@ export type ScanOutput = {
         platform: DetectionName;
         url: string;
         event: string | null;
+        payloadQuality: "complete" | "partial" | "missing";
       }>;
     };
     lossAssumptions: {
@@ -120,6 +131,8 @@ const eventPatterns: Record<EventName, RegExp[]> = {
 
 export type ScanOptions = {
   disabledPlatforms?: DetectionName[];
+  storePlatform?: StorePlatformName;
+  financialAssumptions?: FinancialAssumptions;
 };
 
 type RdapBootstrapResponse = {
@@ -144,6 +157,7 @@ type NetworkEntry = {
   url: string;
   resourceType: string;
   method: string;
+  postData: string | null;
 };
 
 type ResourceMetric = {
@@ -349,16 +363,154 @@ function extractIds(platform: DetectionName, text: string) {
   return [];
 }
 
-function detectEventFromUrl(url: string) {
+function parseRequestPayload(entry: NetworkEntry) {
+  const payload: Record<string, string> = {};
+
+  try {
+    const parsedUrl = new URL(entry.url);
+
+    for (const [key, value] of parsedUrl.searchParams.entries()) {
+      payload[key] = value;
+    }
+  } catch {
+    // Keep the payload collected so far.
+  }
+
+  if (!entry.postData) {
+    return payload;
+  }
+
+  try {
+    const body = JSON.parse(entry.postData) as unknown;
+
+    if (body && typeof body === "object" && !Array.isArray(body)) {
+      for (const [key, value] of Object.entries(body)) {
+        if (typeof value === "string" || typeof value === "number") {
+          payload[key] = String(value);
+        }
+      }
+    }
+  } catch {
+    try {
+      const params = new URLSearchParams(entry.postData);
+
+      for (const [key, value] of params.entries()) {
+        payload[key] = value;
+      }
+    } catch {
+      payload.rawBody = entry.postData.slice(0, 500);
+    }
+  }
+
+  return payload;
+}
+
+function normalizeEventName(value: string | null | undefined): EventName | null {
+  if (!value) {
+    return null;
+  }
+
+  const normalized = value.toLowerCase();
+
+  if (
+    normalized.includes("pageview") ||
+    normalized === "page_view" ||
+    normalized === "pageview"
+  ) {
+    return "PAGE_VIEW";
+  }
+
+  if (
+    normalized.includes("addtocart") ||
+    normalized === "add_to_cart" ||
+    normalized === "add-to-cart"
+  ) {
+    return "ADD_TO_CART";
+  }
+
+  if (
+    normalized.includes("initiatecheckout") ||
+    normalized === "begin_checkout" ||
+    normalized === "checkout" ||
+    normalized === "initiate_checkout"
+  ) {
+    return "INITIATE_CHECKOUT";
+  }
+
+  return null;
+}
+
+function detectEventFromEntry(entry: NetworkEntry) {
+  const payload = parseRequestPayload(entry);
+  const explicitEvent = normalizeEventName(
+    payload.ev ?? payload.en ?? payload.event ?? payload.event_name ?? payload.name,
+  );
+
+  if (explicitEvent) {
+    return explicitEvent;
+  }
+
   for (const [event, patterns] of Object.entries(eventPatterns) as Array<
     [EventName, RegExp[]]
   >) {
-    if (patterns.some((pattern) => pattern.test(url))) {
+    if (patterns.some((pattern) => pattern.test(entry.url) || pattern.test(entry.postData ?? ""))) {
       return event;
     }
   }
 
   return null;
+}
+
+function validatePayloadQuality(
+  platform: DetectionName,
+  event: EventName | null,
+  payload: Record<string, string>,
+) {
+  if (!event) {
+    return {
+      quality: "missing" as const,
+      missing: ["event_name"],
+      present: Object.keys(payload),
+    };
+  }
+
+  const commonKeys =
+    platform === "META"
+      ? ["id", "ev"]
+      : platform === "GOOGLE"
+        ? ["tid", "en"]
+        : ["event"];
+  const conversionKeys =
+    event === "PAGE_VIEW"
+      ? []
+      : ["currency", "value", "content_ids", "items", "item_id", "product_id"];
+  const hasCommon = commonKeys.some((key) => Boolean(payload[key]));
+  const hasValue =
+    event === "PAGE_VIEW" ||
+    ["value", "price", "revenue"].some((key) => Boolean(payload[key]));
+  const hasCurrency =
+    event === "PAGE_VIEW" ||
+    ["currency", "cu"].some((key) => Boolean(payload[key]));
+  const hasItem =
+    event === "PAGE_VIEW" ||
+    conversionKeys.some((key) => Boolean(payload[key]));
+  const missing = [
+    !hasCommon ? "tracking_id_or_event_name" : null,
+    !hasValue ? "value" : null,
+    !hasCurrency ? "currency" : null,
+    !hasItem ? "product_or_item_id" : null,
+  ].filter((item): item is string => Boolean(item));
+
+  return {
+    quality:
+      missing.length === 0
+        ? ("complete" as const)
+        : missing.length <= 2
+          ? ("partial" as const)
+          : ("missing" as const),
+    missing,
+    present: Object.keys(payload),
+  };
 }
 
 function platformFromRequest(url: string): DetectionName | null {
@@ -378,10 +530,16 @@ function getTrackingRequests(networkEntries: NetworkEntry[]) {
         return null;
       }
 
+      const payload = parseRequestPayload(entry);
+      const event = detectEventFromEntry(entry);
+      const payloadValidation = validatePayloadQuality(platform, event, payload);
+
       return {
         platform,
         url: entry.url,
-        event: detectEventFromUrl(entry.url),
+        event,
+        payload,
+        payloadValidation,
       };
     })
     .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry));
@@ -421,19 +579,25 @@ async function getShopifyProductHandle(baseUrl: string) {
   }
 }
 
-async function findProductUrl(page: Page, baseUrl: string, shopifyHandle: string | null) {
+async function findProductUrl(
+  page: Page,
+  baseUrl: string,
+  shopifyHandle: string | null,
+  platform: StorePlatformName,
+) {
   if (shopifyHandle) {
     return new URL(`/products/${shopifyHandle}`, baseUrl).toString();
   }
 
-  return page.evaluate(() => {
-    const productHrefPatterns = [
-      /\/products\//i,
-      /\/produto\//i,
-      /\/produtos\//i,
-      /\/p(\/|-)/i,
-      /\/produto-/i,
-    ];
+  const productPatterns = [
+    ...getStrategy(platform).productPatterns,
+    ...ecommerceStrategies.OTHER.productPatterns,
+  ].map((pattern) => pattern.source);
+
+  return page.evaluate((patternSources) => {
+    const productHrefPatterns = patternSources.map(
+      (source) => new RegExp(source, "i"),
+    );
     const anchors = Array.from(document.querySelectorAll<HTMLAnchorElement>("a[href]"));
     const productLink = anchors.find((anchor) => {
       const href = anchor.href;
@@ -450,7 +614,109 @@ async function findProductUrl(page: Page, baseUrl: string, shopifyHandle: string
     });
 
     return productLink?.href ?? null;
-  });
+  }, productPatterns);
+}
+
+const ecommerceStrategies: Record<
+  StorePlatformName,
+  {
+    productPatterns: RegExp[];
+    addToCartSelectors: string[];
+    checkoutSelectors: string[];
+  }
+> = {
+  SHOPIFY: {
+    productPatterns: [/\/products\//i],
+    addToCartSelectors: [
+      'form[action*="/cart/add"] button[type="submit"]',
+      'button[name="add"]',
+      '[data-add-to-cart]',
+      '[data-testid*="add-to-cart"]',
+    ],
+    checkoutSelectors: [
+      'a[href*="/checkout"]',
+      'button[name="checkout"]',
+      'form[action*="/cart"] button[type="submit"]',
+    ],
+  },
+  NUVEMSHOP: {
+    productPatterns: [/\/produtos?\//i, /\/p\//i],
+    addToCartSelectors: [
+      '[data-store*="product-buy-button"]',
+      '[data-component="product.add-to-cart"]',
+      'input[name="add_to_cart"]',
+    ],
+    checkoutSelectors: [
+      'a[href*="/checkout"]',
+      'a[href*="/comprar"]',
+      'button:has-text("Finalizar compra")',
+    ],
+  },
+  VTEX: {
+    productPatterns: [/\/p$/i, /\/p\?/i, /\/produto\//i],
+    addToCartSelectors: [
+      '.vtex-add-to-cart-button-0-x-buttonText',
+      'button[class*="add-to-cart"]',
+      'button:has-text("Adicionar ao carrinho")',
+    ],
+    checkoutSelectors: [
+      'a[href*="/checkout"]',
+      'a[href*="/cart"]',
+      'button:has-text("Fechar pedido")',
+    ],
+  },
+  TRAY: {
+    productPatterns: [/\/produto\//i, /\/produtos?\//i],
+    addToCartSelectors: [
+      'button[class*="botao-comprar"]',
+      'button[class*="buy"]',
+      'input[value*="Comprar"]',
+    ],
+    checkoutSelectors: [
+      'a[href*="/checkout"]',
+      'a[href*="/finalizar"]',
+      'button:has-text("Finalizar compra")',
+    ],
+  },
+  OTHER: {
+    productPatterns: [/\/products\//i, /\/produto\//i, /\/produtos\//i, /\/p(\/|-|\?)/i],
+    addToCartSelectors: [],
+    checkoutSelectors: [],
+  },
+};
+
+function getStrategy(platform: StorePlatformName) {
+  return ecommerceStrategies[platform] ?? ecommerceStrategies.OTHER;
+}
+
+function uniqueSelectors(platform: StorePlatformName, kind: "add" | "checkout") {
+  const strategy = getStrategy(platform);
+  const genericAdd = [
+    'button:has-text("Adicionar")',
+    'button:has-text("Adicionar ao carrinho")',
+    'button:has-text("Comprar")',
+    'button:has-text("Add to cart")',
+    'button:has-text("Comprar agora")',
+    'a:has-text("Comprar")',
+  ];
+  const genericCheckout = [
+    'a[href*="/checkout"]',
+    'a[href*="/finalizar"]',
+    'a[href*="/carrinho"]',
+    'a[href*="/cart"]',
+    'button[name="checkout"]',
+    'button:has-text("Checkout")',
+    'button:has-text("Finalizar")',
+    'button:has-text("Finalizar compra")',
+    'button:has-text("Comprar agora")',
+  ];
+
+  return Array.from(
+    new Set([
+      ...(kind === "add" ? strategy.addToCartSelectors : strategy.checkoutSelectors),
+      ...(kind === "add" ? genericAdd : genericCheckout),
+    ]),
+  );
 }
 
 async function clickFirstVisible(page: Page, selectors: string[]) {
@@ -460,14 +726,14 @@ async function clickFirstVisible(page: Page, selectors: string[]) {
     try {
       if ((await locator.count()) > 0 && (await locator.isVisible())) {
         await locator.click({ timeout: 5000 });
-        return true;
+        return selector;
       }
     } catch {
       // Try the next likely selector.
     }
   }
 
-  return false;
+  return null;
 }
 
 async function auditImages(page: Page): Promise<ImageAudit> {
@@ -594,14 +860,31 @@ function buildEventValidation(
   const matches = trackingRequests.filter((request) => request.event === event);
 
   if (matches.length > 0) {
+    const completeMatches = matches.filter(
+      (request) => request.payloadValidation.quality === "complete",
+    );
+    const bestMatch = completeMatches[0] ?? matches[0];
+    const missingFields = Array.from(
+      new Set(matches.flatMap((request) => request.payloadValidation.missing)),
+    );
+
     return {
       event,
-      status: "PASS" as const,
-      details: `${matches.length} request(s) de tracking confirmaram ${event}.`,
+      status: completeMatches.length > 0 ? ("PASS" as const) : ("WARNING" as const),
+      details:
+        completeMatches.length > 0
+          ? `${matches.length} request(s) confirmaram ${event} com payload suficiente.`
+          : `${matches.length} request(s) confirmaram ${event}, mas faltam dados importantes: ${missingFields.join(", ")}.`,
       metadata: {
+        payloadQuality: bestMatch.payloadValidation.quality,
+        missingFields,
         requests: matches.slice(0, 5).map((request) => ({
           platform: request.platform,
           evidence: requestEvidence(request.url),
+          event: request.event,
+          payloadQuality: request.payloadValidation.quality,
+          missingFields: request.payloadValidation.missing,
+          presentFields: request.payloadValidation.present.slice(0, 12),
         })),
       },
     };
@@ -740,11 +1023,20 @@ function createFindings(input: {
   return findings;
 }
 
-function estimateMonthlyLossCents(findings: ScanOutput["findings"]) {
+function estimateMonthlyLossCents(
+  findings: ScanOutput["findings"],
+  inputAssumptions: FinancialAssumptions = {},
+) {
   const assumptions = {
-    monthlyTraffic: 30000,
-    averageOrderValueCents: 18000,
-    baseConversionRate: 0.018,
+    monthlyTraffic: Math.max(0, inputAssumptions.monthlyTraffic ?? 30000),
+    averageOrderValueCents: Math.max(
+      0,
+      inputAssumptions.averageOrderValueCents ?? 18000,
+    ),
+    baseConversionRate: Math.max(
+      0,
+      Math.min(1, inputAssumptions.baseConversionRate ?? 0.018),
+    ),
     severityConversionDrag: findings.reduce((sum, finding) => {
       const severityMultiplier =
         finding.severity === "HIGH" ? 0.003 : finding.severity === "MEDIUM" ? 0.0018 : 0.0008;
@@ -752,7 +1044,10 @@ function estimateMonthlyLossCents(findings: ScanOutput["findings"]) {
       return sum + severityMultiplier * Math.max(1, finding.impactScore / 10);
     }, 0),
   };
-  const cappedDrag = Math.min(0.012, assumptions.severityConversionDrag);
+  const cappedDrag = Math.min(
+    Math.max(0.001, assumptions.baseConversionRate * 0.65),
+    assumptions.severityConversionDrag,
+  );
   const lostOrders = assumptions.monthlyTraffic * cappedDrag;
 
   return {
@@ -776,6 +1071,7 @@ export async function runStoreScan(
     },
   });
   const networkEntries: NetworkEntry[] = [];
+  const storePlatform = options.storePlatform ?? "OTHER";
   let consoleErrors = 0;
 
   page.on("request", (request: Request) => {
@@ -783,6 +1079,7 @@ export async function runStoreScan(
       url: request.url(),
       method: request.method(),
       resourceType: request.resourceType(),
+      postData: request.postData(),
     });
   });
 
@@ -798,6 +1095,8 @@ export async function runStoreScan(
   let checkoutUrl: string | null = null;
   let clickedAddToCart = false;
   let clickedCheckout = false;
+  let addToCartMethod: string | null = null;
+  let checkoutMethod: string | null = null;
 
   try {
     await page.goto(url, { waitUntil: "domcontentloaded", timeout: 45000 });
@@ -813,7 +1112,7 @@ export async function runStoreScan(
     const navigationMetrics = await getNavigationMetrics(page);
     const imageAudit = await auditImages(page);
     productHandle = await productHandlePromise;
-    productUrl = await findProductUrl(page, url, productHandle);
+    productUrl = await findProductUrl(page, url, productHandle, storePlatform);
 
     if (productUrl) {
       await page.goto(productUrl, { waitUntil: "domcontentloaded", timeout: 45000 });
@@ -821,32 +1120,21 @@ export async function runStoreScan(
       await page.waitForTimeout(800);
     }
 
-    clickedAddToCart = await clickFirstVisible(page, [
-      'form[action*="/cart/add"] button[type="submit"]',
-      'button[name="add"]',
-      '[data-add-to-cart]',
-      'button:has-text("Adicionar")',
-      'button:has-text("Adicionar ao carrinho")',
-      'button:has-text("Comprar")',
-      'button:has-text("Add to cart")',
-      'button:has-text("Comprar agora")',
-    ]);
+    addToCartMethod = await clickFirstVisible(
+      page,
+      uniqueSelectors(storePlatform, "add"),
+    );
+    clickedAddToCart = Boolean(addToCartMethod);
 
     if (clickedAddToCart) {
       await page.waitForTimeout(2500);
     }
 
-    clickedCheckout = await clickFirstVisible(page, [
-      'a[href*="/checkout"]',
-      'a[href*="/finalizar"]',
-      'a[href*="/carrinho"]',
-      'a[href*="/cart"]',
-      'button[name="checkout"]',
-      'button:has-text("Checkout")',
-      'button:has-text("Finalizar")',
-      'button:has-text("Finalizar compra")',
-      'button:has-text("Comprar agora")',
-    ]);
+    checkoutMethod = await clickFirstVisible(
+      page,
+      uniqueSelectors(storePlatform, "checkout"),
+    );
+    clickedCheckout = Boolean(checkoutMethod);
 
     if (clickedCheckout) {
       await page.waitForTimeout(3000);
@@ -960,7 +1248,10 @@ export async function runStoreScan(
       apps,
       domain,
     });
-    const estimate = estimateMonthlyLossCents(findings);
+    const estimate = estimateMonthlyLossCents(
+      findings,
+      options.financialAssumptions,
+    );
 
     return {
       detections,
@@ -975,9 +1266,12 @@ export async function runStoreScan(
           detected: /Shopify|cdn\.shopify|myshopify|ShopifyAnalytics|nuvemshop|tiendanube|vtex|tray|traycdn/i.test(
             allObservedText,
           ),
+          platform: storePlatform,
           productHandle,
           productUrl,
           checkoutUrl,
+          addToCartMethod,
+          checkoutMethod,
         },
         performance,
         images: {
@@ -992,6 +1286,7 @@ export async function runStoreScan(
             platform: request.platform,
             url: requestEvidence(request.url),
             event: request.event,
+            payloadQuality: request.payloadValidation.quality,
           })),
         },
         lossAssumptions: estimate.assumptions,
