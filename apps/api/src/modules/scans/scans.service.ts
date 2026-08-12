@@ -10,6 +10,11 @@ type CreateScanInput = {
   userId?: string;
   storeId?: string;
   url: string;
+  financialAssumptions?: {
+    monthlyTraffic?: number;
+    averageOrderValueCents?: number;
+    baseConversionRate?: number;
+  };
 };
 
 function detectStorePlatformFromText(text: string): StorePlatform {
@@ -253,6 +258,8 @@ export class ScansService {
         scanId: scan.id,
         storeId: resolvedStoreId,
         url: normalizedUrl,
+        storePlatform,
+        financialAssumptions: input.financialAssumptions,
       },
       {
         attempts: 4,

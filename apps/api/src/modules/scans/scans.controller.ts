@@ -21,6 +21,11 @@ export class ScansController {
       userId,
       storeId: body.storeId,
       url: body.url,
+      financialAssumptions: {
+        monthlyTraffic: body.monthlyTraffic,
+        averageOrderValueCents: body.averageOrderValueCents,
+        baseConversionRate: body.baseConversionRate,
+      },
     });
   }
 

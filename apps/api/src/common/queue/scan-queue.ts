@@ -13,6 +13,12 @@ export type ScanJobData = {
   scanId: string;
   storeId: string;
   url: string;
+  storePlatform: "SHOPIFY" | "NUVEMSHOP" | "VTEX" | "TRAY" | "OTHER";
+  financialAssumptions?: {
+    monthlyTraffic?: number;
+    averageOrderValueCents?: number;
+    baseConversionRate?: number;
+  };
 };
 
 export const scansQueue = new Queue<ScanJobData>(SCANS_QUEUE_NAME, {
