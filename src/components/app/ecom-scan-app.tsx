@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState, type ComponentType } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
@@ -344,6 +345,21 @@ function ScoreRing({ score }: { score: number }) {
   );
 }
 
+function LogoMark({ className = "h-12 w-40" }: { className?: string }) {
+  return (
+    <div className={`relative shrink-0 ${className}`}>
+      <Image
+        src="/logo.jpeg"
+        alt="Ecom Scan"
+        fill
+        className="object-contain"
+        sizes="192px"
+        priority
+      />
+    </div>
+  );
+}
+
 function SidebarContent({
   user,
   onSignOut,
@@ -361,14 +377,8 @@ function SidebarContent({
   return (
     <div className="flex h-full flex-col">
       <div className="px-5 py-5">
-        <Link href="/" className="flex items-center gap-3 rounded-lg outline-none focus-visible:ring-3 focus-visible:ring-ring/50">
-          <div className="flex size-9 items-center justify-center rounded-lg bg-primary text-xs font-bold text-primary-foreground">
-            ES
-          </div>
-          <div>
-            <p className="text-sm font-semibold">Ecom Scan</p>
-            <p className="text-xs text-muted-foreground">Diagnostico e-commerce</p>
-          </div>
+        <Link href="/" className="flex justify-center rounded-lg outline-none focus-visible:ring-3 focus-visible:ring-ring/50">
+          <LogoMark className="h-16 w-56" />
         </Link>
       </div>
 
@@ -453,9 +463,7 @@ function AuthGate() {
     <main className="grid min-h-screen place-items-center bg-[radial-gradient(circle_at_top,_#e7efff,_#f7f9fc_48%,_#f7f9fc_100%)] p-4">
       <Card className="w-full max-w-md">
         <CardHeader>
-          <div className="mb-3 flex size-11 items-center justify-center rounded-lg bg-primary text-sm font-bold text-primary-foreground">
-            ES
-          </div>
+          <LogoMark className="mb-3 h-14 w-48" />
           <CardTitle>{mode === "login" ? "Entrar no Ecom Scan" : "Criar acesso interno"}</CardTitle>
           <p className="text-sm text-muted-foreground">
             Use email e senha para acessar a plataforma de diagnostico.
@@ -863,6 +871,7 @@ export function EcomScanApp({ view }: { view: AppView }) {
                   <SidebarContent user={session.user} onSignOut={() => void handleSignOut()} />
                 </SheetContent>
               </Sheet>
+              <LogoMark className="h-11 w-36 lg:hidden" />
               <div>
                 <p className="text-sm text-muted-foreground">
                   Ecom Scan <span className="mx-1">&gt;</span>{" "}
