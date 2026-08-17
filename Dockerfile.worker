@@ -1,0 +1,14 @@
+FROM mcr.microsoft.com/playwright:v1.62.0-jammy
+
+WORKDIR /app
+
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY prisma ./prisma
+COPY apps/scan-worker ./apps/scan-worker
+
+RUN corepack enable \
+  && pnpm install --frozen-lockfile \
+  && pnpm prisma generate \
+  && pnpm run build:worker
+
+CMD ["pnpm", "run", "start:worker"]
