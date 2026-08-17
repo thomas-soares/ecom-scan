@@ -36,6 +36,10 @@ const redisConnection = new IORedis(REDIS_URL, {
   maxRetriesPerRequest: null,
 });
 
+redisConnection.on("error", (error) => {
+  console.error("Redis worker connection error", error.message);
+});
+
 const prisma = new PrismaClient();
 
 type ScanJobData = {
