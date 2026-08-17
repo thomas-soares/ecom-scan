@@ -8,6 +8,7 @@
     "dev:api": "ts-node-dev --respawn --transpile-only --project apps/api/tsconfig.json apps/api/src/main.ts",
     "dev:worker": "tsx watch --tsconfig apps/scan-worker/tsconfig.json apps/scan-worker/src/main.ts",
     "build:api": "tsc -p apps/api/tsconfig.json",
+    "build:worker:railway": "pnpm exec playwright install chromium && pnpm run build:worker",
     "start:api": "node apps/api/dist/main.js",
     "build:worker": "tsc -p apps/scan-worker/tsconfig.json",
     "start:worker": "node apps/scan-worker/dist/main.js",
