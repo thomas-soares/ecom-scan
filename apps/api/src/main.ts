@@ -24,8 +24,8 @@ async function bootstrap() {
     credentials: true,
   });
 
-  await app.listen(env.API_PORT);
-  console.log(`API listening on http://localhost:${env.API_PORT}`);
+  await app.listen(env.API_PORT, "0.0.0.0");
+  console.log(`API listening on http://0.0.0.0:${env.API_PORT}`);
 }
 
 bootstrap();
