@@ -24,10 +24,9 @@ import {
   PackageSearch,
   Search,
   ShieldCheck,
-  UserPlus,
 } from "lucide-react";
 
-import { signIn, signOut, signUp, useSession } from "@/lib/auth-client";
+import { signIn, signOut, useSession } from "@/lib/auth-client";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -428,8 +427,6 @@ function SidebarContent({
 }
 
 function AuthGate() {
-  const [mode, setMode] = useState<"login" | "signup">("login");
-  const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -441,10 +438,7 @@ function AuthGate() {
     setErrorMessage(null);
 
     try {
-      const result =
-        mode === "login"
-          ? await signIn.email({ email, password })
-          : await signUp.email({ email, password, name });
+      const result = await signIn.email({ email, password });
 
       if (result.error) {
         setErrorMessage(result.error.message || "Nao foi possivel autenticar.");
@@ -464,25 +458,13 @@ function AuthGate() {
       <Card className="w-full max-w-md">
         <CardHeader>
           <LogoMark className="mb-3 h-14 w-48" />
-          <CardTitle>{mode === "login" ? "Entrar no Ecom Scan" : "Criar acesso interno"}</CardTitle>
+          <CardTitle>Entrar no Ecom Scan</CardTitle>
           <p className="text-sm text-muted-foreground">
             Use email e senha para acessar a plataforma de diagnostico.
           </p>
         </CardHeader>
         <CardContent>
           <form className="space-y-4" onSubmit={handleSubmit}>
-            {mode === "signup" && (
-              <div className="grid gap-2">
-                <Label htmlFor="name">Nome</Label>
-                <Input
-                  id="name"
-                  value={name}
-                  onChange={(event) => setName(event.target.value)}
-                  placeholder="Seu nome"
-                  required
-                />
-              </div>
-            )}
             <div className="grid gap-2">
               <Label htmlFor="email">Email</Label>
               <Input
@@ -512,26 +494,11 @@ function AuthGate() {
                   <Loader2 className="size-4 animate-spin" />
                   Processando...
                 </>
-              ) : mode === "login" ? (
-                "Entrar"
               ) : (
-                <>
-                  <UserPlus className="size-4" />
-                  Criar conta
-                </>
+                "Entrar"
               )}
             </Button>
           </form>
-          <Button
-            className="mt-3 w-full"
-            variant="ghost"
-            onClick={() => {
-              setMode((current) => (current === "login" ? "signup" : "login"));
-              setErrorMessage(null);
-            }}
-          >
-            {mode === "login" ? "Criar novo acesso" : "Ja tenho acesso"}
-          </Button>
         </CardContent>
       </Card>
     </main>
@@ -556,9 +523,8 @@ export function EcomScanApp({ view }: { view: AppView }) {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [noticeMessage, setNoticeMessage] = useState<string | null>(null);
   const [shareMessage, setShareMessage] = useState<string | null>(null);
-  const [monthlyTraffic, setMonthlyTraffic] = useState("30000");
-  const [averageOrderValue, setAverageOrderValue] = useState("180");
-  const [baseConversionRate, setBaseConversionRate] = useState("1.8");
+  const [monthlyTraffic, setMonthlyTraffic] = useState("");
+  const [averageOrderValue, setAverageOrderValue] = useState("");
   const isPolling =
     Boolean(activeScanId) &&
     (scanStatus === "QUEUED" || scanStatus === "RUNNING");
@@ -578,6 +544,47 @@ export function EcomScanApp({ view }: { view: AppView }) {
       : view === "historico"
         ? "Historico de analises"
         : "Relatorio";
+  const monthlyTrafficValue = Number(monthlyTraffic);
+  const averageOrderValueValue = Number(averageOrderValue.replace(",", "."));
+  const isScanUrlValid = useMemo(() => {
+    const trimmedUrl = scanUrl.trim();
+
+    if (!trimmedUrl) {
+      return false;
+    }
+
+    try {
+      const protocol = new URL(trimmedUrl).protocol;
+
+      return protocol === "http:" || protocol === "https:";
+    } catch {
+      return false;
+    }
+  }, [scanUrl]);
+  const isMonthlyTrafficValid =
+    monthlyTraffic.trim().length > 0 &&
+    Number.isInteger(monthlyTrafficValue) &&
+    monthlyTrafficValue > 0;
+  const isAverageOrderValueValid =
+    averageOrderValue.trim().length > 0 &&
+    Number.isFinite(averageOrderValueValue) &&
+    averageOrderValueValue > 0;
+  const canRunScan =
+    isScanUrlValid &&
+    isMonthlyTrafficValid &&
+    isAverageOrderValueValid &&
+    !isSubmitting &&
+    !isPolling;
+  const scanFormHint =
+    !scanUrl.trim() && !monthlyTraffic.trim() && !averageOrderValue.trim()
+      ? "Preencha a URL da loja, as visitas mensais e o ticket medio para iniciar o diagnostico."
+      : !isScanUrlValid
+        ? "Informe uma URL completa, com http:// ou https://."
+        : !isMonthlyTrafficValid
+          ? "Informe o volume mensal de visitas usando apenas numeros inteiros."
+          : !isAverageOrderValueValid
+            ? "Informe o ticket medio em reais. Use ponto ou virgula para centavos."
+            : "Tudo pronto para iniciar o diagnostico.";
 
   async function handleSignOut() {
     await signOut();
@@ -713,8 +720,18 @@ export function EcomScanApp({ view }: { view: AppView }) {
   async function handleRunScan() {
     const trimmedUrl = scanUrl.trim();
 
-    if (!trimmedUrl) {
-      setErrorMessage("Informe a URL completa de uma loja suportada.");
+    if (!isScanUrlValid) {
+      setErrorMessage("Informe uma URL completa, comecando com http:// ou https://.");
+      return;
+    }
+
+    if (!isMonthlyTrafficValid) {
+      setErrorMessage("Informe as visitas mensais usando apenas numeros inteiros.");
+      return;
+    }
+
+    if (!isAverageOrderValueValid) {
+      setErrorMessage("Informe o ticket medio em reais antes de iniciar.");
       return;
     }
 
@@ -731,14 +748,10 @@ export function EcomScanApp({ view }: { view: AppView }) {
         },
         body: JSON.stringify({
           url: trimmedUrl,
-          monthlyTraffic: Math.max(0, Number(monthlyTraffic) || 0),
+          monthlyTraffic: monthlyTrafficValue,
           averageOrderValueCents: Math.max(
             0,
-            Math.round((Number(averageOrderValue.replace(",", ".")) || 0) * 100),
-          ),
-          baseConversionRate: Math.max(
-            0,
-            (Number(baseConversionRate.replace(",", ".")) || 0) / 100,
+            Math.round(averageOrderValueValue * 100),
           ),
         }),
       });
@@ -922,39 +935,44 @@ export function EcomScanApp({ view }: { view: AppView }) {
                     value={scanUrl}
                     onChange={(event) => setScanUrl(event.target.value)}
                     placeholder="https://sualoja.com"
+                    required
                   />
                 </div>
-                <div className="grid gap-3 sm:grid-cols-3">
+                <div className="grid gap-3 sm:grid-cols-2">
                   <div className="grid gap-2">
-                    <Label htmlFor="monthly-traffic">Visitas/mês</Label>
+                    <Label htmlFor="monthly-traffic">Visitas/mes</Label>
                     <Input
                       id="monthly-traffic"
                       inputMode="numeric"
                       value={monthlyTraffic}
                       onChange={(event) => setMonthlyTraffic(event.target.value)}
+                      placeholder="Ex: 30000"
+                      required
                     />
                   </div>
                   <div className="grid gap-2">
-                    <Label htmlFor="average-order-value">Ticket médio</Label>
+                    <Label htmlFor="average-order-value">Ticket medio</Label>
                     <Input
                       id="average-order-value"
                       inputMode="decimal"
                       value={averageOrderValue}
                       onChange={(event) => setAverageOrderValue(event.target.value)}
-                    />
-                  </div>
-                  <div className="grid gap-2">
-                    <Label htmlFor="base-conversion-rate">Conversão %</Label>
-                    <Input
-                      id="base-conversion-rate"
-                      inputMode="decimal"
-                      value={baseConversionRate}
-                      onChange={(event) => setBaseConversionRate(event.target.value)}
+                      placeholder="Ex: 180"
+                      required
                     />
                   </div>
                 </div>
+                <p
+                  className={
+                    canRunScan
+                      ? "text-sm text-emerald-600"
+                      : "text-sm text-muted-foreground"
+                  }
+                >
+                  {scanFormHint}
+                </p>
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                  <Button onClick={handleRunScan} disabled={isSubmitting || isPolling}>
+                  <Button onClick={handleRunScan} disabled={!canRunScan}>
                     {isSubmitting ? (
                       <>
                         <Loader2 className="size-4 animate-spin" />
