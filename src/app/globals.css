@@ -67,6 +67,14 @@ body {
 }
 
 @media print {
+  @page {
+    margin: 14mm;
+  }
+
+  * {
+    print-color-adjust: exact;
+  }
+
   body {
     background: #ffffff;
   }
@@ -85,6 +93,12 @@ body {
 
   #relatorio {
     margin: 0 !important;
+  }
+
+  #relatorio section,
+  #relatorio [data-slot="card"] {
+    break-inside: avoid;
+    page-break-inside: avoid;
   }
 
   #relatorio .shadow-sm,
