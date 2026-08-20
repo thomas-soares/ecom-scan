@@ -36,6 +36,9 @@ export class ScansController {
       metaAds: {
         activeAdsCount: body.metaActiveAdsCount ?? null,
       },
+      googleAds: {
+        activeAdsCount: body.googleActiveAdsCount ?? null,
+      },
     });
   }
 

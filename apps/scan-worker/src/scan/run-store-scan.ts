@@ -98,6 +98,9 @@ export type ScanOutput = {
     metaAds?: {
       activeAdsCount: number | null;
     };
+    googleAds?: {
+      activeAdsCount: number | null;
+    };
     lossAssumptions: {
       monthlyTraffic: number;
       averageOrderValueCents: number;
@@ -151,6 +154,9 @@ export type ScanOptions = {
   storePlatform?: StorePlatformName;
   financialAssumptions: FinancialAssumptions;
   metaAds?: {
+    activeAdsCount: number | null;
+  };
+  googleAds?: {
     activeAdsCount: number | null;
   };
 };
@@ -1553,6 +1559,7 @@ export async function runStoreScan(
           })),
         },
         metaAds: options.metaAds,
+        googleAds: options.googleAds,
         lossAssumptions: estimate.assumptions,
         diagnostic,
       },

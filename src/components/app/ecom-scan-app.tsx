@@ -20,6 +20,7 @@ import {
   ImageIcon,
   Loader2,
   LogOut,
+  Megaphone,
   Menu,
   MousePointer,
   PackageSearch,
@@ -146,6 +147,9 @@ type ScanData = {
         }>;
       };
       metaAds?: {
+        activeAdsCount: number | null;
+      };
+      googleAds?: {
         activeAdsCount: number | null;
       };
       lossAssumptions?: {
@@ -694,6 +698,7 @@ export function EcomScanApp({ view }: { view: AppView }) {
     const images = summary?.images;
     const apps = summary?.apps;
     const metaActiveAdsCount = summary?.metaAds?.activeAdsCount;
+    const googleActiveAdsCount = summary?.googleAds?.activeAdsCount;
     const visibleDetections = scan.detections.filter(
       (item) => !isDisabledDetection(item),
     );
@@ -733,6 +738,17 @@ export function EcomScanApp({ view }: { view: AppView }) {
           : "A contagem de anuncios da Meta nao foi registrada neste diagnostico.",
         icon: Waypoints,
         accent: typeof metaActiveAdsCount === "number" && metaActiveAdsCount > 0 ? "green" : "amber",
+      },
+      {
+        title: "Anuncios Google",
+        value: typeof googleActiveAdsCount === "number"
+          ? googleActiveAdsCount.toLocaleString("pt-BR")
+          : "N/D",
+        note: typeof googleActiveAdsCount === "number"
+          ? "Anuncios ativos encontrados no Google para esta loja."
+          : "A contagem de anuncios do Google nao foi registrada neste diagnostico.",
+        icon: Megaphone,
+        accent: typeof googleActiveAdsCount === "number" && googleActiveAdsCount > 0 ? "green" : "amber",
       },
       {
         title: "Eventos",
@@ -837,6 +853,38 @@ export function EcomScanApp({ view }: { view: AppView }) {
     }
   }
 
+  async function fetchGoogleAdsCount(url: string) {
+    try {
+      const params = new URLSearchParams({ url });
+      const response = await fetch(`/api/google-ad-transparency?${params.toString()}`, {
+        method: "GET",
+        cache: "no-store",
+      });
+
+      if (!response.ok) {
+        throw new Error(
+          await readApiError(response, "Nao foi possivel consultar os anuncios ativos."),
+        );
+      }
+
+      const data = (await response.json()) as {
+        activeAdsCount: number | null;
+        configured: boolean;
+        domain: string;
+        message?: string;
+      };
+
+      return {
+        count: data.activeAdsCount,
+        domain: data.domain,
+        isConfigured: data.configured,
+      };
+    } catch (error) {
+      console.warn("Nao foi possivel consultar anuncios ativos no Google.", error);
+      return null;
+    }
+  }
+
   async function fetchScanById(scanId: string) {
     const response = await fetch(`/api/scans/${scanId}`, {
       method: "GET",
@@ -882,7 +930,10 @@ export function EcomScanApp({ view }: { view: AppView }) {
     setShareMessage(null);
 
     try {
-      const collectedMetaAds = await fetchMetaAdsCount(normalizedUrl);
+      const [collectedMetaAds, collectedGoogleAds] = await Promise.all([
+        fetchMetaAdsCount(normalizedUrl),
+        fetchGoogleAdsCount(normalizedUrl),
+      ]);
       const response = await fetch("/api/scans", {
         method: "POST",
         headers: {
@@ -896,6 +947,7 @@ export function EcomScanApp({ view }: { view: AppView }) {
             Math.round(averageOrderValueValue * 100),
           ),
           metaActiveAdsCount: collectedMetaAds?.count ?? undefined,
+          googleActiveAdsCount: collectedGoogleAds?.count ?? undefined,
         }),
       });
 
@@ -1320,6 +1372,14 @@ export function EcomScanApp({ view }: { view: AppView }) {
                       <span className="font-semibold text-foreground">
                         {typeof summary?.metaAds?.activeAdsCount === "number"
                           ? summary.metaAds.activeAdsCount.toLocaleString("pt-BR")
+                          : "N/D"}
+                      </span>
+                    </div>
+                    <div className="mb-3 rounded-lg border border-border bg-muted/30 px-3 py-2 text-sm">
+                      <span className="text-muted-foreground">Anuncios ativos no Google: </span>
+                      <span className="font-semibold text-foreground">
+                        {typeof summary?.googleAds?.activeAdsCount === "number"
+                          ? summary.googleAds.activeAdsCount.toLocaleString("pt-BR")
                           : "N/D"}
                       </span>
                     </div>

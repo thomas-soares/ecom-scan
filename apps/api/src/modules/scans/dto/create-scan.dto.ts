@@ -34,4 +34,10 @@ export class CreateScanDto {
   @IsInt()
   @Min(0)
   metaActiveAdsCount?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  googleActiveAdsCount?: number;
 }

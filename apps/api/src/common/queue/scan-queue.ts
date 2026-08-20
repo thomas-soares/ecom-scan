@@ -25,6 +25,9 @@ export type ScanJobData = {
   metaAds?: {
     activeAdsCount: number | null;
   };
+  googleAds?: {
+    activeAdsCount: number | null;
+  };
 };
 
 export const scansQueue = new Queue<ScanJobData>(SCANS_QUEUE_NAME, {
