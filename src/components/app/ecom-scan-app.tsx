@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState, type ComponentType } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState, type ComponentType } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -390,6 +390,15 @@ function scoreFromScan(scan: ScanData | null) {
     return 0;
   }
 
+  const diagnosticScore = scan.report?.summary?.diagnostic?.confidenceScore;
+
+  if (typeof diagnosticScore === "number" && Number.isFinite(diagnosticScore)) {
+    return Math.max(
+      MIN_COMPLETED_SCAN_SCORE,
+      Math.min(99, Math.round(diagnosticScore)),
+    );
+  }
+
   const totalImpact = scan.findings.reduce(
     (sum, item) => sum + item.impactScore,
     0,
@@ -628,6 +637,7 @@ export function EcomScanApp({
 }) {
   const router = useRouter();
   const { data: session, isPending } = useSession();
+  const latestScanFetchRef = useRef(0);
   const [scanUrl, setScanUrl] = useState(DEFAULT_SCAN_URL);
   const [scan, setScan] = useState<ScanData | null>(null);
   const [history, setHistory] = useState<HistoryScan[]>([]);
@@ -870,6 +880,10 @@ export function EcomScanApp({
   }
 
   async function fetchScanById(scanId: string) {
+    const requestId = latestScanFetchRef.current + 1;
+
+    latestScanFetchRef.current = requestId;
+
     const response = await fetch(`/api/scans/${scanId}`, {
       method: "GET",
       cache: "no-store",
@@ -882,6 +896,11 @@ export function EcomScanApp({
     }
 
     const data = (await response.json()) as ScanData;
+
+    if (latestScanFetchRef.current !== requestId) {
+      return data;
+    }
+
     setScan(data);
     setScanStatus(data.status);
     setDetectedPlatform(data.store?.platform ?? null);
@@ -947,6 +966,7 @@ export function EcomScanApp({
       setActiveScanId(data.scanId);
       setScanStatus(data.status);
       setDetectedPlatform(data.platform ?? null);
+      setScan(null);
       setNoticeMessage(data.reused ? data.message || "Diagnóstico recente reutilizado do histórico." : null);
       router.push(`/relatorio?scanId=${data.scanId}`);
       await fetchScanById(data.scanId);
@@ -1242,6 +1262,8 @@ export function EcomScanApp({
                       onClick={() => {
                         setNoticeMessage(null);
                         setActiveScanId(item.id);
+                        setScan(null);
+                        setScanStatus(item.status);
                         router.push(`/relatorio?scanId=${item.id}`);
                         void fetchScanById(item.id);
                       }}
