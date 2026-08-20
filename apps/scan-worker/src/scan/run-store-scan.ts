@@ -11,11 +11,11 @@ export type EventName = "PAGE_VIEW" | "ADD_TO_CART" | "INITIATE_CHECKOUT";
 
 type ValidationState = "PASS" | "WARNING";
 type StorePlatformName = "SHOPIFY" | "NUVEMSHOP" | "VTEX" | "TRAY" | "OTHER";
+type ConfidenceLevel = "HIGH" | "MEDIUM" | "LOW";
 
 type FinancialAssumptions = {
-  monthlyTraffic?: number;
-  averageOrderValueCents?: number;
-  baseConversionRate?: number;
+  monthlyTraffic: number;
+  averageOrderValueCents: number;
 };
 
 export type ScanOutput = {
@@ -23,7 +23,12 @@ export type ScanOutput = {
     platform: DetectionName;
     isDetected: boolean;
     evidence?: string;
-    details?: Record<string, unknown>;
+    details?: Record<string, unknown> & {
+      confidenceLevel?: ConfidenceLevel;
+      confidenceScore?: number;
+      evidenceSources?: string[];
+      recommendedAction?: string;
+    };
   }>;
   events: Array<{
     event: EventName;
@@ -90,11 +95,23 @@ export type ScanOutput = {
         payloadQuality: "complete" | "partial" | "missing";
       }>;
     };
+    metaAds?: {
+      activeAdsCount: number | null;
+    };
     lossAssumptions: {
       monthlyTraffic: number;
       averageOrderValueCents: number;
-      baseConversionRate: number;
       severityConversionDrag: number;
+      estimatedLostOrders: number;
+      formula: string;
+    };
+    diagnostic: {
+      confidenceLevel: ConfidenceLevel;
+      confidenceScore: number;
+      executiveSummary: string;
+      confidenceReasons: string[];
+      recommendedNextSteps: string[];
+      scanLimitations: string[];
     };
   };
 };
@@ -132,7 +149,10 @@ const eventPatterns: Record<EventName, RegExp[]> = {
 export type ScanOptions = {
   disabledPlatforms?: DetectionName[];
   storePlatform?: StorePlatformName;
-  financialAssumptions?: FinancialAssumptions;
+  financialAssumptions: FinancialAssumptions;
+  metaAds?: {
+    activeAdsCount: number | null;
+  };
 };
 
 type RdapBootstrapResponse = {
@@ -554,6 +574,111 @@ function requestEvidence(url: string) {
   }
 }
 
+function confidenceLevelFromScore(score: number): ConfidenceLevel {
+  if (score >= 75) {
+    return "HIGH";
+  }
+
+  if (score >= 45) {
+    return "MEDIUM";
+  }
+
+  return "LOW";
+}
+
+function detectionRecommendedAction(
+  platform: DetectionName,
+  isDetected: boolean,
+  confidenceLevel: ConfidenceLevel,
+) {
+  if (!isDetected) {
+    return `Instalar ou revisar a tag de ${platformLabel(platform)} no tema e no gerenciador de tags.`;
+  }
+
+  if (confidenceLevel !== "HIGH") {
+    return `Validar ${platformLabel(platform)} no gerenciador de eventos, porque a tag foi vista sem request de conversao completo.`;
+  }
+
+  return `Manter ${platformLabel(platform)} e acompanhar se os eventos de conversao continuam chegando com payload completo.`;
+}
+
+function platformLabel(platform: DetectionName) {
+  const labels: Record<DetectionName, string> = {
+    META: "Meta",
+    GOOGLE: "Google",
+    TIKTOK: "TikTok",
+    PINTEREST: "Pinterest",
+    SNAPCHAT: "Snapchat",
+  };
+
+  return labels[platform];
+}
+
+function buildDetectionDetails(input: {
+  platform: DetectionName;
+  requestMatches: ReturnType<typeof getTrackingRequests>;
+  matchedText: string | undefined;
+  ids: string[];
+  disabled: boolean;
+}) {
+  if (input.disabled) {
+    return {
+      isDetected: false,
+      details: {
+        status: "Desativado por feature flag.",
+        confidenceLevel: "LOW" as const,
+        confidenceScore: 0,
+        evidenceSources: [],
+        recommendedAction: "Ativar a feature flag desta plataforma se ela fizer parte do escopo comercial.",
+      },
+    };
+  }
+
+  const completeRequests = input.requestMatches.filter(
+    (request) => request.payloadValidation.quality === "complete",
+  );
+  const partialRequests = input.requestMatches.filter(
+    (request) => request.payloadValidation.quality === "partial",
+  );
+  const isDetected = Boolean(input.requestMatches.length || input.matchedText);
+  const score = Math.min(
+    100,
+    (completeRequests.length > 0 ? 75 : 0) +
+      (partialRequests.length > 0 ? 50 : 0) +
+      (input.requestMatches.length > 0 ? 15 : 0) +
+      (input.matchedText ? 25 : 0) +
+      (input.ids.length > 0 ? 10 : 0),
+  );
+  const confidenceLevel = confidenceLevelFromScore(score);
+  const evidenceSources = [
+    input.requestMatches.length > 0 ? "request observado" : null,
+    input.matchedText ? "script ou HTML" : null,
+    input.ids.length > 0 ? "ID de tag extraido" : null,
+    completeRequests.length > 0 ? "payload completo" : null,
+    partialRequests.length > 0 ? "payload parcial" : null,
+  ].filter((item): item is string => Boolean(item));
+
+  return {
+    isDetected,
+    details: {
+      ids: input.ids,
+      confidenceLevel,
+      confidenceScore: isDetected ? score : 0,
+      evidenceSources,
+      recommendedAction: detectionRecommendedAction(
+        input.platform,
+        isDetected,
+        confidenceLevel,
+      ),
+      observedRequests: input.requestMatches.slice(0, 5).map((request) => ({
+        event: request.event,
+        evidence: requestEvidence(request.url),
+        payloadQuality: request.payloadValidation.quality,
+      })),
+    },
+  };
+}
+
 async function getShopifyProductHandle(baseUrl: string) {
   try {
     const productsUrl = new URL("/products.json?limit=1", baseUrl).toString();
@@ -877,7 +1002,13 @@ function buildEventValidation(
           : `${matches.length} request(s) confirmaram ${event}, mas faltam dados importantes: ${missingFields.join(", ")}.`,
       metadata: {
         payloadQuality: bestMatch.payloadValidation.quality,
+        confidenceScore: completeMatches.length > 0 ? 90 : 60,
+        confidenceLevel: completeMatches.length > 0 ? "HIGH" : "MEDIUM",
         missingFields,
+        recommendedAction:
+          completeMatches.length > 0
+            ? "Manter monitoramento e comparar com o gerenciador de eventos da plataforma."
+            : `Completar os campos ausentes do payload: ${missingFields.join(", ")}.`,
         requests: matches.slice(0, 5).map((request) => ({
           platform: request.platform,
           evidence: requestEvidence(request.url),
@@ -898,6 +1029,10 @@ function buildEventValidation(
         "O clique de adicionar ao carrinho ocorreu, mas nenhum request de evento foi confirmado.",
       metadata: {
         interacted: true,
+        confidenceScore: 45,
+        confidenceLevel: "LOW",
+        recommendedAction:
+          "Revisar o disparo do evento AddToCart no clique do botao de compra ou no dataLayer.",
       },
     };
   }
@@ -910,6 +1045,10 @@ function buildEventValidation(
         "O fluxo chegou ao checkout, mas nenhum request de evento foi confirmado.",
       metadata: {
         checkoutUrl: context.checkoutUrl,
+        confidenceScore: 45,
+        confidenceLevel: "LOW",
+        recommendedAction:
+          "Revisar o disparo de InitiateCheckout no botao de checkout e na abertura do checkout.",
       },
     };
   }
@@ -919,7 +1058,12 @@ function buildEventValidation(
     status: "WARNING" as const,
     details:
       "Nao foi possivel confirmar o disparo do evento durante a navegacao automatizada.",
-    metadata: {},
+    metadata: {
+      confidenceScore: 20,
+      confidenceLevel: "LOW",
+      recommendedAction:
+        "Validar manualmente no navegador e no gerenciador de eventos se o evento dispara no fluxo real.",
+    },
   };
 }
 
@@ -931,6 +1075,7 @@ function createFindings(input: {
   images: ImageAudit;
   apps: ScanOutput["summary"]["apps"];
   domain: ScanOutput["summary"]["domain"];
+  ecommerce: ScanOutput["summary"]["ecommerce"];
 }) {
   const findings: ScanOutput["findings"] = [];
   const missingPrimaryTracking = input.detections.filter(
@@ -946,7 +1091,7 @@ function createFindings(input: {
       severity: missingPrimaryTracking.length >= 2 ? "HIGH" : "MEDIUM",
       title: "Pixels principais incompletos",
       description:
-        "Meta e Google sao canais prioritarios para a V1; ao menos um deles nao foi detectado com evidencia suficiente.",
+        "Meta e Google sao canais prioritarios para a V1; ao menos um deles nao foi detectado com evidencia suficiente. Recomendacao: revisar instalacao da tag, GTM e bloqueios de consentimento antes de escalar midia paga.",
       impactScore: missingPrimaryTracking.length * 18,
     });
   }
@@ -957,8 +1102,30 @@ function createFindings(input: {
       severity: warningEvents.length >= 2 ? "HIGH" : "MEDIUM",
       title: "Eventos de conversao sem confirmacao completa",
       description:
-        "Um ou mais eventos essenciais nao tiveram disparo confirmado durante o fluxo automatizado.",
+        "Um ou mais eventos essenciais nao tiveram disparo confirmado durante o fluxo automatizado. Recomendacao: validar PageView, AddToCart e InitiateCheckout no gerenciador de eventos e completar payloads de valor, moeda e produto.",
       impactScore: warningEvents.length * 14,
+    });
+  }
+
+  if (!input.ecommerce.productUrl || !input.ecommerce.addToCartMethod) {
+    findings.push({
+      category: "TRACKING",
+      severity: "MEDIUM",
+      title: "Fluxo de compra nao foi confirmado ponta a ponta",
+      description:
+        "O scan nao conseguiu confirmar produto e carrinho com seguranca. Recomendacao: checar se a pagina depende de interacoes especiais, pop-ups, seletor de variante ou bloqueios anti-bot.",
+      impactScore: 12,
+    });
+  }
+
+  if (!input.ecommerce.checkoutUrl && !input.ecommerce.checkoutMethod) {
+    findings.push({
+      category: "TRACKING",
+      severity: "MEDIUM",
+      title: "Checkout nao foi observado",
+      description:
+        "O fluxo automatizado nao confirmou chegada ao checkout. Recomendacao: validar manualmente o botao de checkout e medir se eventos de inicio de checkout disparam no caminho real do usuario.",
+      impactScore: 12,
     });
   }
 
@@ -968,7 +1135,7 @@ function createFindings(input: {
       severity: input.loadTimeMs > 8000 ? "HIGH" : "MEDIUM",
       title: "Carregamento inicial lento",
       description:
-        "A pagina demorou alem do esperado para carregar e estabilizar os recursos iniciais.",
+        "A pagina demorou alem do esperado para carregar e estabilizar os recursos iniciais. Recomendacao: priorizar reducao de scripts bloqueantes, imagens iniciais e apps carregados no topo da pagina.",
       impactScore: input.loadTimeMs > 8000 ? 20 : 12,
     });
   }
@@ -979,7 +1146,7 @@ function createFindings(input: {
       severity: input.performance.scriptTransferKb > 1600 ? "HIGH" : "MEDIUM",
       title: "JavaScript pesado",
       description:
-        "O volume transferido de scripts pode estar atrasando a renderizacao e a interacao.",
+        "O volume transferido de scripts pode estar atrasando a renderizacao e a interacao. Recomendacao: remover apps sem uso, adiar scripts nao criticos e auditar tags duplicadas.",
       impactScore: input.performance.scriptTransferKb > 1600 ? 18 : 10,
     });
   }
@@ -990,7 +1157,7 @@ function createFindings(input: {
       severity: input.images.oversized > 4 ? "HIGH" : "MEDIUM",
       title: "Imagens com oportunidade de otimizacao",
       description:
-        "Foram encontradas imagens maiores que o necessario ou sem carregamento sob demanda.",
+        "Foram encontradas imagens maiores que o necessario ou sem carregamento sob demanda. Recomendacao: converter imagens grandes para formatos modernos, dimensionar banners e aplicar lazy loading fora da primeira dobra.",
       impactScore: Math.min(20, input.images.oversized * 4 + input.images.missingLazyLoading),
     });
   }
@@ -1001,7 +1168,7 @@ function createFindings(input: {
       severity: input.apps.totalExternalScripts > 28 ? "HIGH" : "MEDIUM",
       title: "Muitos scripts externos e apps ativos",
       description:
-        "A loja carrega um volume alto de scripts de terceiros, o que pode prejudicar velocidade e rastreamento.",
+        "A loja carrega um volume alto de scripts de terceiros, o que pode prejudicar velocidade e rastreamento. Recomendacao: revisar apps por impacto comercial e remover scripts duplicados ou sem dono.",
       impactScore: input.apps.totalExternalScripts > 28 ? 18 : 10,
     });
   }
@@ -1015,7 +1182,7 @@ function createFindings(input: {
       severity: "MEDIUM",
       title: "Dominio proximo do vencimento",
       description:
-        "O dominio esta proximo do vencimento e pode causar risco operacional se nao for renovado.",
+        "O dominio esta proximo do vencimento e pode causar risco operacional se nao for renovado. Recomendacao: renovar o dominio e confirmar responsavel operacional.",
       impactScore: 8,
     });
   }
@@ -1025,18 +1192,15 @@ function createFindings(input: {
 
 function estimateMonthlyLossCents(
   findings: ScanOutput["findings"],
-  inputAssumptions: FinancialAssumptions = {},
+  inputAssumptions: FinancialAssumptions | undefined,
 ) {
+  if (!inputAssumptions) {
+    throw new Error("Financial assumptions are required to estimate monthly loss.");
+  }
+
   const assumptions = {
-    monthlyTraffic: Math.max(0, inputAssumptions.monthlyTraffic ?? 30000),
-    averageOrderValueCents: Math.max(
-      0,
-      inputAssumptions.averageOrderValueCents ?? 18000,
-    ),
-    baseConversionRate: Math.max(
-      0,
-      Math.min(1, inputAssumptions.baseConversionRate ?? 0.018),
-    ),
+    monthlyTraffic: Math.max(0, inputAssumptions.monthlyTraffic),
+    averageOrderValueCents: Math.max(0, inputAssumptions.averageOrderValueCents),
     severityConversionDrag: findings.reduce((sum, finding) => {
       const severityMultiplier =
         finding.severity === "HIGH" ? 0.003 : finding.severity === "MEDIUM" ? 0.0018 : 0.0008;
@@ -1044,10 +1208,7 @@ function estimateMonthlyLossCents(
       return sum + severityMultiplier * Math.max(1, finding.impactScore / 10);
     }, 0),
   };
-  const cappedDrag = Math.min(
-    Math.max(0.001, assumptions.baseConversionRate * 0.65),
-    assumptions.severityConversionDrag,
-  );
+  const cappedDrag = assumptions.severityConversionDrag;
   const lostOrders = assumptions.monthlyTraffic * cappedDrag;
 
   return {
@@ -1055,13 +1216,99 @@ function estimateMonthlyLossCents(
     assumptions: {
       ...assumptions,
       severityConversionDrag: cappedDrag,
+      estimatedLostOrders: Number(lostOrders.toFixed(2)),
+      formula:
+        "visitas mensais x queda estimada de conversao por severidade x ticket medio",
     },
+  };
+}
+
+function formatScanFailure(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+
+  if (/Timeout|timed out|Navigation timeout/i.test(message)) {
+    return "A loja demorou para carregar ou bloqueou a navegacao automatizada. Tente novamente mais tarde ou valide se ha protecao anti-bot, pop-up obrigatorio ou instabilidade.";
+  }
+
+  if (/net::ERR_NAME_NOT_RESOLVED|ENOTFOUND|ERR_NAME/i.test(message)) {
+    return "Nao foi possivel resolver o dominio informado. Confirme se a URL esta correta e se a loja esta online.";
+  }
+
+  if (/net::ERR_CONNECTION_REFUSED|ECONNREFUSED|ERR_CONNECTION/i.test(message)) {
+    return "Nao foi possivel conectar na loja. Confirme se o site esta online e aceita conexoes externas.";
+  }
+
+  if (/ERR_CERT|certificate/i.test(message)) {
+    return "A loja apresentou problema de certificado SSL durante o acesso automatizado.";
+  }
+
+  return `Nao foi possivel concluir a varredura desta URL. Detalhe tecnico: ${message}`;
+}
+
+function buildDiagnosticSummary(input: {
+  detections: ScanOutput["detections"];
+  events: ScanOutput["events"];
+  findings: ScanOutput["findings"];
+  ecommerce: ScanOutput["summary"]["ecommerce"];
+  performance: ScanOutput["summary"]["performance"];
+  imageAudit: ImageAudit;
+}) {
+  const activeDetections = input.detections.filter((item) => item.isDetected);
+  const detectionScores = input.detections
+    .filter((item) => item.details?.confidenceScore !== undefined)
+    .map((item) => Number(item.details?.confidenceScore));
+  const eventScores = input.events.map((item) =>
+    typeof item.metadata?.confidenceScore === "number"
+      ? item.metadata.confidenceScore
+      : 20,
+  );
+  const averageScore = Math.round(
+    [...detectionScores, ...eventScores].reduce((sum, value) => sum + value, 0) /
+      Math.max(1, detectionScores.length + eventScores.length),
+  );
+  const criticalFindings = input.findings.filter((item) => item.severity === "HIGH");
+  const warningEvents = input.events.filter((item) => item.status !== "PASS");
+  const recommendedNextSteps = input.findings.length > 0
+    ? input.findings.slice(0, 4).map((item) => item.description)
+    : [
+        "Manter monitoramento de tags, eventos e performance antes de campanhas maiores.",
+      ];
+  const scanLimitations = [
+    !input.ecommerce.productUrl
+      ? "Produto nao localizado automaticamente; alguns eventos de funil podem exigir validacao manual."
+      : null,
+    !input.ecommerce.checkoutUrl
+      ? "Checkout nao confirmado por URL; validar fluxo real quando houver seletor de variante, pop-up ou login."
+      : null,
+    warningEvents.length > 0
+      ? "Eventos com payload parcial ou ausente precisam ser comparados com a plataforma de anuncios."
+      : null,
+  ].filter((item): item is string => Boolean(item));
+  const executiveSummary =
+    criticalFindings.length > 0
+      ? "Ha problemas criticos que podem afetar mensuracao, performance ou caminho de compra antes de ampliar investimento em trafego."
+      : input.findings.length > 0
+        ? "A loja esta operando, mas existem oportunidades claras de ajuste em tracking, performance ou funil."
+        : "A varredura nao encontrou problemas criticos nos sinais observados; manter monitoramento recorrente.";
+
+  return {
+    confidenceLevel: confidenceLevelFromScore(averageScore),
+    confidenceScore: averageScore,
+    executiveSummary,
+    confidenceReasons: [
+      `${activeDetections.length} fonte(s) de trafego detectada(s).`,
+      `${input.events.filter((item) => item.status === "PASS").length}/${input.events.length} eventos confirmados.`,
+      `${input.performance.totalRequests} requests observados durante o scan.`,
+      `${input.imageAudit.total} imagens auditadas.`,
+    ],
+    recommendedNextSteps,
+    scanLimitations,
   };
 }
 
 export async function runStoreScan(
   url: string,
-  options: ScanOptions = {},
+  options: ScanOptions,
 ): Promise<ScanOutput> {
   const browser = await chromium.launch({ headless: true });
   const page = await browser.newPage({
@@ -1155,35 +1402,41 @@ export async function runStoreScan(
     const detections = (Object.keys(detectionRules) as DetectionName[]).map(
       (platform) => {
         if (disabledPlatforms.has(platform)) {
+          const result = buildDetectionDetails({
+            platform,
+            requestMatches: [],
+            matchedText: undefined,
+            ids: [],
+            disabled: true,
+          });
+
           return {
             platform,
-            isDetected: false,
-            details: {
-              status: "Desativado por feature flag.",
-            },
+            isDetected: result.isDetected,
+            details: result.details,
           };
         }
 
-        const requestMatch = trackingRequests.find(
+        const requestMatches = trackingRequests.filter(
           (request) => request.platform === platform,
         );
         const matched = allObservedText.match(detectionRules[platform]);
         const ids = extractIds(platform, allObservedText);
+        const result = buildDetectionDetails({
+          platform,
+          requestMatches,
+          matchedText: matched?.[0],
+          ids,
+          disabled: false,
+        });
 
         return {
           platform,
-          isDetected: Boolean(requestMatch || matched),
-          evidence: requestMatch ? requestEvidence(requestMatch.url) : matched?.[0],
-          details: {
-            ids,
-            observedRequests: trackingRequests
-              .filter((request) => request.platform === platform)
-              .slice(0, 5)
-              .map((request) => ({
-                event: request.event,
-                evidence: requestEvidence(request.url),
-              })),
-          },
+          isDetected: result.isDetected,
+          evidence: requestMatches[0]
+            ? requestEvidence(requestMatches[0].url)
+            : matched?.[0],
+          details: result.details,
         };
       },
     );
@@ -1239,6 +1492,17 @@ export async function runStoreScan(
       consoleErrors,
     };
     const domain = await lookupDomainExpiration(url);
+    const ecommerce = {
+      detected: /Shopify|cdn\.shopify|myshopify|ShopifyAnalytics|nuvemshop|tiendanube|vtex|tray|traycdn/i.test(
+        allObservedText,
+      ),
+      platform: storePlatform,
+      productHandle,
+      productUrl,
+      checkoutUrl,
+      addToCartMethod,
+      checkoutMethod,
+    };
     const findings = createFindings({
       detections,
       events,
@@ -1247,11 +1511,20 @@ export async function runStoreScan(
       images: imageAudit,
       apps,
       domain,
+      ecommerce,
     });
     const estimate = estimateMonthlyLossCents(
       findings,
       options.financialAssumptions,
     );
+    const diagnostic = buildDiagnosticSummary({
+      detections,
+      events,
+      findings,
+      ecommerce,
+      performance,
+      imageAudit,
+    });
 
     return {
       detections,
@@ -1262,17 +1535,7 @@ export async function runStoreScan(
         totalScripts: scripts.length,
         loadTimeMs,
         domain,
-        ecommerce: {
-          detected: /Shopify|cdn\.shopify|myshopify|ShopifyAnalytics|nuvemshop|tiendanube|vtex|tray|traycdn/i.test(
-            allObservedText,
-          ),
-          platform: storePlatform,
-          productHandle,
-          productUrl,
-          checkoutUrl,
-          addToCartMethod,
-          checkoutMethod,
-        },
+        ecommerce,
         performance,
         images: {
           total: imageAudit.total,
@@ -1289,9 +1552,13 @@ export async function runStoreScan(
             payloadQuality: request.payloadValidation.quality,
           })),
         },
+        metaAds: options.metaAds,
         lossAssumptions: estimate.assumptions,
+        diagnostic,
       },
     };
+  } catch (error) {
+    throw new Error(formatScanFailure(error));
   } finally {
     await browser.close();
   }

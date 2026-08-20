@@ -47,10 +47,12 @@ type ScanJobData = {
   storeId: string;
   url: string;
   storePlatform: "SHOPIFY" | "NUVEMSHOP" | "VTEX" | "TRAY" | "OTHER";
-  financialAssumptions?: {
-    monthlyTraffic?: number;
-    averageOrderValueCents?: number;
-    baseConversionRate?: number;
+  financialAssumptions: {
+    monthlyTraffic: number;
+    averageOrderValueCents: number;
+  };
+  metaAds?: {
+    activeAdsCount: number | null;
   };
 };
 
@@ -68,6 +70,7 @@ async function processScan(job: Job<ScanJobData>) {
     disabledPlatforms,
     storePlatform: job.data.storePlatform,
     financialAssumptions: job.data.financialAssumptions,
+    metaAds: job.data.metaAds,
   });
 
   await prisma.$transaction(async (tx) => {
