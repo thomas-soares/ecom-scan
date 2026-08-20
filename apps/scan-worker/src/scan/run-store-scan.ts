@@ -14,6 +14,7 @@ export type EventName = "PAGE_VIEW" | "ADD_TO_CART" | "INITIATE_CHECKOUT";
 type ValidationState = "PASS" | "WARNING";
 type StorePlatformName = "SHOPIFY" | "NUVEMSHOP" | "VTEX" | "TRAY" | "OTHER";
 type ConfidenceLevel = "HIGH" | "MEDIUM" | "LOW";
+type CommercialSignalSource = "META_AD_LIBRARY" | "GOOGLE_AD_TRANSPARENCY";
 
 type FinancialAssumptions = {
   monthlyTraffic: number;
@@ -26,6 +27,11 @@ export type ScanOutput = {
     isDetected: boolean;
     evidence?: string;
     details?: Record<string, unknown> & {
+      commercialSignal?: {
+        source: CommercialSignalSource;
+        activeAdsCount: number;
+        confidenceLevel: "LOW";
+      };
       confidenceLevel?: ConfidenceLevel;
       confidenceScore?: number;
       evidenceSources?: string[];
@@ -709,8 +715,15 @@ function detectionRecommendedAction(
   platform: DetectionName,
   isDetected: boolean,
   confidenceLevel: ConfidenceLevel,
+  commercialSignal?: {
+    activeAdsCount: number;
+  },
 ) {
   if (!isDetected) {
+    if (commercialSignal) {
+      return `${platformLabel(platform)} tem anuncios ativos, mas o pixel/tag nao foi confirmado tecnicamente no navegador. Validar instalacao no gerenciador de eventos, GTM e checkout VTEX.`;
+    }
+
     return `Instalar ou revisar a tag de ${platformLabel(platform)} no tema e no gerenciador de tags.`;
   }
 
@@ -739,6 +752,7 @@ function buildDetectionDetails(input: {
   matchedText: string | undefined;
   ids: string[];
   disabled: boolean;
+  activeAdsCount?: number | null;
 }) {
   if (input.disabled) {
     return {
@@ -759,6 +773,20 @@ function buildDetectionDetails(input: {
   const partialRequests = input.requestMatches.filter(
     (request) => request.payloadValidation.quality === "partial",
   );
+  const commercialSignalSource: CommercialSignalSource | null =
+    input.platform === "META"
+      ? "META_AD_LIBRARY"
+      : input.platform === "GOOGLE"
+        ? "GOOGLE_AD_TRANSPARENCY"
+        : null;
+  const commercialSignal =
+    commercialSignalSource && typeof input.activeAdsCount === "number" && input.activeAdsCount > 0
+      ? {
+          source: commercialSignalSource,
+          activeAdsCount: input.activeAdsCount,
+          confidenceLevel: "LOW" as const,
+        }
+      : null;
   const isDetected = Boolean(input.requestMatches.length || input.matchedText);
   const score = Math.min(
     100,
@@ -775,12 +803,14 @@ function buildDetectionDetails(input: {
     input.ids.length > 0 ? "ID de tag extraido" : null,
     completeRequests.length > 0 ? "payload completo" : null,
     partialRequests.length > 0 ? "payload parcial" : null,
+    commercialSignal ? "anuncios ativos encontrados" : null,
   ].filter((item): item is string => Boolean(item));
 
   return {
     isDetected,
     details: {
       ids: input.ids,
+      commercialSignal: commercialSignal ?? undefined,
       confidenceLevel,
       confidenceScore: isDetected ? score : 0,
       evidenceSources,
@@ -788,6 +818,7 @@ function buildDetectionDetails(input: {
         input.platform,
         isDetected,
         confidenceLevel,
+        commercialSignal ?? undefined,
       ),
       observedRequests: input.requestMatches.slice(0, 5).map((request) => ({
         event: request.event,
@@ -1260,12 +1291,21 @@ function createFindings(input: {
   const warningEvents = input.events.filter((event) => event.status !== "PASS");
 
   if (missingPrimaryTracking.length > 0) {
+    const missingWithActiveAds = missingPrimaryTracking.filter(
+      (detection) => detection.details?.commercialSignal,
+    );
+
     findings.push({
       category: "TRACKING",
       severity: missingPrimaryTracking.length >= 2 ? "HIGH" : "MEDIUM",
-      title: "Pixels principais incompletos",
+      title:
+        missingWithActiveAds.length > 0
+          ? "Midia ativa sem tracking confirmado"
+          : "Pixels principais incompletos",
       description:
-        "Meta e Google sao canais prioritarios para a V1; ao menos um deles nao foi detectado com evidencia suficiente. Recomendacao: revisar instalacao da tag, GTM e bloqueios de consentimento antes de escalar midia paga.",
+        missingWithActiveAds.length > 0
+          ? "Ha anuncios ativos, mas Meta ou Google nao tiveram pixel/tag confirmado tecnicamente no navegador. Recomendacao: validar instalacao no gerenciador de eventos, GTM, Pixel Apps da VTEX, consentimento e checkout antes de escalar midia paga."
+          : "Meta e Google sao canais prioritarios para a V1; ao menos um deles nao foi detectado com evidencia suficiente. Recomendacao: revisar instalacao da tag, GTM e bloqueios de consentimento antes de escalar midia paga.",
       impactScore: missingPrimaryTracking.length * 18,
     });
   }
@@ -1586,6 +1626,11 @@ export async function runStoreScan(
       .join("\n")}`;
     const disabledPlatforms = new Set(options.disabledPlatforms ?? []);
     const trackingRequests = getTrackingRequests(networkEntries);
+    const loadTimeMs = Date.now() - startedAt;
+    const [domain, adCounts] = await Promise.all([
+      lookupDomainExpiration(url),
+      collectAdCounts(browser, url),
+    ]);
     const detections = (Object.keys(detectionRules) as DetectionName[]).map(
       (platform) => {
         if (disabledPlatforms.has(platform)) {
@@ -1615,6 +1660,12 @@ export async function runStoreScan(
           matchedText: matched?.[0],
           ids,
           disabled: false,
+          activeAdsCount:
+            platform === "META"
+              ? adCounts.metaAds.activeAdsCount
+              : platform === "GOOGLE"
+                ? adCounts.googleAds.activeAdsCount
+                : null,
         });
 
         return {
@@ -1645,7 +1696,6 @@ export async function runStoreScan(
         checkoutUrl,
       }),
     ];
-    const loadTimeMs = Date.now() - startedAt;
     const totalTransferKb = Math.round(
       resources.reduce(
         (sum, resource) => sum + (resource.transferSize || resource.encodedBodySize),
@@ -1678,10 +1728,6 @@ export async function runStoreScan(
       imageTransferKb,
       consoleErrors,
     };
-    const [domain, adCounts] = await Promise.all([
-      lookupDomainExpiration(url),
-      collectAdCounts(browser, url),
-    ]);
     const ecommerce = {
       detected: /Shopify|cdn\.shopify|myshopify|ShopifyAnalytics|nuvemshop|tiendanube|vtex|tray|traycdn/i.test(
         allObservedText,

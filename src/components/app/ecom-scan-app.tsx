@@ -65,6 +65,11 @@ type ScanData = {
         payloadQuality?: "complete" | "partial" | "missing";
       }>;
       status?: string;
+      commercialSignal?: {
+        source: "META_AD_LIBRARY" | "GOOGLE_AD_TRANSPARENCY";
+        activeAdsCount: number;
+        confidenceLevel: "LOW";
+      };
       confidenceLevel?: "HIGH" | "MEDIUM" | "LOW";
       confidenceScore?: number;
       evidenceSources?: string[];
@@ -759,12 +764,12 @@ export function EcomScanApp({
         accent: speedScore < 55 ? "red" : speedScore < 75 ? "amber" : "green",
       },
       {
-        title: "Fontes de trafego",
+        title: "Tracking observado",
         value: `${trafficSources.length} ${trafficSources.length === 1 ? "fonte" : "fontes"}`,
         note:
           trafficSources.length > 0
             ? `${trafficSources.map((item) => platformLabel(item.platform)).join(", ")} detectadas por scripts e requests observados.`
-            : "Nenhuma fonte de trafego foi detectada por scripts ou requests observados.",
+            : "Nenhum pixel ou tag foi confirmado por scripts ou requests observados.",
         icon: Waypoints,
         accent: trafficSources.length > 0 ? "green" : "red",
       },
@@ -774,7 +779,7 @@ export function EcomScanApp({
           ? metaActiveAdsCount.toLocaleString("pt-BR")
           : "N/D",
         note: typeof metaActiveAdsCount === "number"
-          ? "Anuncios ativos encontrados na Meta para esta loja."
+          ? "Midia ativa encontrada na Meta; isso nao confirma pixel instalado."
           : "A contagem de anuncios da Meta nao foi registrada neste diagnostico.",
         icon: Waypoints,
         accent: typeof metaActiveAdsCount === "number" && metaActiveAdsCount > 0 ? "green" : "amber",
@@ -785,7 +790,7 @@ export function EcomScanApp({
           ? googleActiveAdsCount.toLocaleString("pt-BR")
           : "N/D",
         note: typeof googleActiveAdsCount === "number"
-          ? "Anuncios ativos encontrados no Google para esta loja."
+          ? "Midia ativa encontrada no Google; isso nao confirma tag instalada."
           : "A contagem de anuncios do Google nao foi registrada neste diagnostico.",
         icon: Megaphone,
         accent: typeof googleActiveAdsCount === "number" && googleActiveAdsCount > 0 ? "green" : "amber",
@@ -1526,8 +1531,18 @@ export function EcomScanApp({
                           <div>
                             <p className="font-medium">{platformLabel(item.platform)}</p>
                             <p className="text-sm text-muted-foreground">
-                              {item.evidence || item.details?.status || "Sem evidencia observada."}
+                              {item.evidence ||
+                                item.details?.status ||
+                                (item.details?.commercialSignal
+                                  ? "Midia ativa encontrada, mas sem request ou script de tracking confirmado."
+                                  : "Sem evidencia observada.")}
                             </p>
+                            {item.details?.commercialSignal && (
+                              <p className="mt-1 text-sm text-muted-foreground">
+                                Anuncios ativos:{" "}
+                                {item.details.commercialSignal.activeAdsCount.toLocaleString("pt-BR")}
+                              </p>
+                            )}
                             {item.details?.recommendedAction && (
                               <p className="mt-1 text-sm text-muted-foreground">
                                 {item.details.recommendedAction}
@@ -1536,7 +1551,11 @@ export function EcomScanApp({
                           </div>
                           <div className="flex shrink-0 flex-col items-end gap-1">
                             <Badge variant={item.isDetected ? "default" : "destructive"}>
-                              {item.isDetected ? "Detectado" : "Nao achou"}
+                              {item.isDetected
+                                ? "Detectado"
+                                : item.details?.commercialSignal
+                                  ? "Nao confirmado"
+                                  : "Nao achou"}
                             </Badge>
                             <Badge variant={confidenceVariant(item.details?.confidenceLevel)}>
                               {confidenceLabel(item.details?.confidenceLevel)}
