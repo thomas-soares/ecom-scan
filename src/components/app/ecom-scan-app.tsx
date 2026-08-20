@@ -582,7 +582,13 @@ function AuthGate() {
   );
 }
 
-export function EcomScanApp({ view }: { view: AppView }) {
+export function EcomScanApp({
+  view,
+  selectedScanId = null,
+}: {
+  view: AppView;
+  selectedScanId?: string | null;
+}) {
   const router = useRouter();
   const { data: session, isPending } = useSession();
   const [scanUrl, setScanUrl] = useState(DEFAULT_SCAN_URL);
@@ -993,18 +999,19 @@ export function EcomScanApp({ view }: { view: AppView }) {
       return;
     }
 
-    const params = new URLSearchParams(window.location.search);
-    const scanId = params.get("scanId");
-
     window.setTimeout(() => {
       void loadHistory();
 
-      if (view === "relatorio" && scanId) {
-        setActiveScanId(scanId);
-        void fetchScanById(scanId);
+      if (view === "relatorio" && selectedScanId) {
+        setActiveScanId(selectedScanId);
+        setScan((currentScan) =>
+          currentScan?.id === selectedScanId ? currentScan : null,
+        );
+        setScanStatus(null);
+        void fetchScanById(selectedScanId);
       }
     }, 0);
-  }, [session?.user, view]);
+  }, [session?.user, selectedScanId, view]);
 
   useEffect(() => {
     if (!activeScanId || scanStatus === "COMPLETED" || scanStatus === "FAILED") {
