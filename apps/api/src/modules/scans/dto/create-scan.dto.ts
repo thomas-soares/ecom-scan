@@ -1,11 +1,10 @@
 import {
   IsInt,
   IsNotEmpty,
-  IsNumber,
-  IsOptional,
   IsString,
   IsUrl,
   Min,
+  IsOptional,
 } from "class-validator";
 import { Type } from "class-transformer";
 
@@ -16,25 +15,23 @@ export class CreateScanDto {
   storeId?: string;
 
   @IsUrl({
-    require_protocol: true,
+    require_protocol: false,
   })
   url!: string;
 
-  @IsOptional()
   @Type(() => Number)
   @IsInt()
-  @Min(0)
-  monthlyTraffic?: number;
+  @Min(1)
+  monthlyTraffic!: number;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  averageOrderValueCents!: number;
 
   @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(0)
-  averageOrderValueCents?: number;
-
-  @IsOptional()
-  @Type(() => Number)
-  @IsNumber()
-  @Min(0)
-  baseConversionRate?: number;
+  metaActiveAdsCount?: number;
 }

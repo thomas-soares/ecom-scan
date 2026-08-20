@@ -7,25 +7,27 @@ const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_URL ??
   "http://localhost:4000/api";
 
-async function getSessionUserId() {
+async function getSessionUser() {
   const session = await auth.api.getSession({
     headers: await headers(),
   });
 
-  return session?.user?.id ?? null;
+  return session?.user ?? null;
 }
 
 export async function GET() {
-  const userId = await getSessionUserId();
+  const user = await getSessionUser();
 
-  if (!userId) {
+  if (!user) {
     return NextResponse.json({ message: "Nao autenticado." }, { status: 401 });
   }
 
   const response = await fetch(`${API_BASE_URL}/scans`, {
     method: "GET",
     headers: {
-      "x-user-id": userId,
+      "x-user-id": user.id,
+      "x-user-email": user.email,
+      "x-user-name": user.name ?? "",
     },
     cache: "no-store",
   });
@@ -40,9 +42,9 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const userId = await getSessionUserId();
+  const user = await getSessionUser();
 
-  if (!userId) {
+  if (!user) {
     return NextResponse.json({ message: "Nao autenticado." }, { status: 401 });
   }
 
@@ -50,7 +52,9 @@ export async function POST(request: Request) {
     method: "POST",
     headers: {
       "content-type": "application/json",
-      "x-user-id": userId,
+      "x-user-id": user.id,
+      "x-user-email": user.email,
+      "x-user-name": user.name ?? "",
     },
     body: await request.text(),
   });

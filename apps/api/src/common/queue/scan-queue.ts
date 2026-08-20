@@ -18,10 +18,12 @@ export type ScanJobData = {
   storeId: string;
   url: string;
   storePlatform: "SHOPIFY" | "NUVEMSHOP" | "VTEX" | "TRAY" | "OTHER";
-  financialAssumptions?: {
-    monthlyTraffic?: number;
-    averageOrderValueCents?: number;
-    baseConversionRate?: number;
+  financialAssumptions: {
+    monthlyTraffic: number;
+    averageOrderValueCents: number;
+  };
+  metaAds?: {
+    activeAdsCount: number | null;
   };
 };
 

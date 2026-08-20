@@ -8,30 +8,32 @@ import { scansQueue } from "../../common/queue/scan-queue";
 
 type CreateScanInput = {
   userId?: string;
+  userEmail?: string;
+  userName?: string;
   storeId?: string;
   url: string;
-  financialAssumptions?: {
-    monthlyTraffic?: number;
-    averageOrderValueCents?: number;
-    baseConversionRate?: number;
+  financialAssumptions: {
+    monthlyTraffic: number;
+    averageOrderValueCents: number;
+  };
+  metaAds?: {
+    activeAdsCount: number | null;
   };
 };
 
 type FinancialAssumptions = NonNullable<CreateScanInput["financialAssumptions"]>;
+type AuthUserInput = {
+  userId?: string;
+  userEmail?: string;
+  userName?: string;
+};
 
 function normalizeFinancialAssumptions(
-  assumptions: FinancialAssumptions | undefined,
+  assumptions: FinancialAssumptions,
 ) {
   return {
-    monthlyTraffic: Math.max(0, assumptions?.monthlyTraffic ?? 30000),
-    averageOrderValueCents: Math.max(
-      0,
-      assumptions?.averageOrderValueCents ?? 18000,
-    ),
-    baseConversionRate: Math.max(
-      0,
-      Math.min(1, assumptions?.baseConversionRate ?? 0.018),
-    ),
+    monthlyTraffic: Math.max(0, assumptions.monthlyTraffic),
+    averageOrderValueCents: Math.max(0, assumptions.averageOrderValueCents),
   };
 }
 
@@ -54,12 +56,10 @@ function getSummaryLossAssumptions(summary: unknown) {
   const candidate = lossAssumptions as Record<string, unknown>;
   const monthlyTraffic = Number(candidate.monthlyTraffic);
   const averageOrderValueCents = Number(candidate.averageOrderValueCents);
-  const baseConversionRate = Number(candidate.baseConversionRate);
 
   if (
     !Number.isFinite(monthlyTraffic) ||
-    !Number.isFinite(averageOrderValueCents) ||
-    !Number.isFinite(baseConversionRate)
+    !Number.isFinite(averageOrderValueCents)
   ) {
     return null;
   }
@@ -67,7 +67,6 @@ function getSummaryLossAssumptions(summary: unknown) {
   return {
     monthlyTraffic,
     averageOrderValueCents,
-    baseConversionRate,
   };
 }
 
@@ -81,8 +80,7 @@ function financialAssumptionsMatch(
 
   return (
     current.monthlyTraffic === previous.monthlyTraffic &&
-    current.averageOrderValueCents === previous.averageOrderValueCents &&
-    Math.abs(current.baseConversionRate - previous.baseConversionRate) < 0.000001
+    current.averageOrderValueCents === previous.averageOrderValueCents
   );
 }
 
@@ -183,26 +181,107 @@ async function inferStorePlatform(url: string): Promise<StorePlatform> {
   return StorePlatform.OTHER;
 }
 
-function assertAuthenticated(userId?: string) {
+function assertAuthenticated(userId?: string): asserts userId is string {
   if (!userId) {
     throw new UnauthorizedException("User is required.");
   }
 }
 
-function assertScannableUrl(url: string) {
-  const protocol = new URL(url).protocol;
+function fallbackUserEmail(userId: string) {
+  return `${userId}@local.ecom-scan`;
+}
 
-  if (protocol !== "http:" && protocol !== "https:") {
+function normalizeScannableUrl(rawUrl: string) {
+  const trimmedUrl = rawUrl.trim();
+  const urlWithProtocol = /^[a-z][a-z\d+.-]*:\/\//i.test(trimmedUrl)
+    ? trimmedUrl
+    : `https://${trimmedUrl}`;
+
+  let parsedUrl: URL;
+
+  try {
+    parsedUrl = new URL(urlWithProtocol);
+  } catch {
+    throw new BadRequestException("Informe uma URL valida da loja.");
+  }
+
+  if (parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:") {
     throw new BadRequestException("Informe uma URL http ou https.");
   }
+
+  if (!parsedUrl.hostname.includes(".")) {
+    throw new BadRequestException("Informe o dominio completo da loja.");
+  }
+
+  parsedUrl.hash = "";
+
+  if (parsedUrl.pathname === "/") {
+    parsedUrl.pathname = "/";
+  }
+
+  return parsedUrl.toString();
 }
 
 @Injectable()
 export class ScansService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async listScans(userId?: string) {
-    assertAuthenticated(userId);
+  private async resolveUserId(input: {
+    userId: string;
+    userEmail?: string;
+    userName?: string;
+  }) {
+    const userById = await this.prisma.user.findUnique({
+      where: {
+        id: input.userId,
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    if (userById) {
+      return userById.id;
+    }
+
+    const email = input.userEmail?.trim();
+
+    if (email) {
+      const userByEmail = await this.prisma.user.findUnique({
+        where: {
+          email,
+        },
+        select: {
+          id: true,
+        },
+      });
+
+      if (userByEmail) {
+        return userByEmail.id;
+      }
+    }
+
+    const createdUser = await this.prisma.user.create({
+      data: {
+        id: input.userId,
+        email: email || fallbackUserEmail(input.userId),
+        name: input.userName?.trim() || null,
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    return createdUser.id;
+  }
+
+  async listScans(input: AuthUserInput) {
+    assertAuthenticated(input.userId);
+    const userId = await this.resolveUserId({
+      userId: input.userId,
+      userEmail: input.userEmail,
+      userName: input.userName,
+    });
 
     return this.prisma.scan.findMany({
       where: {
@@ -227,13 +306,17 @@ export class ScansService {
 
   async createScan(input: CreateScanInput) {
     assertAuthenticated(input.userId);
+    const userId = await this.resolveUserId({
+      userId: input.userId,
+      userEmail: input.userEmail,
+      userName: input.userName,
+    });
 
-    const normalizedUrl = new URL(input.url).toString();
+    const normalizedUrl = normalizeScannableUrl(input.url);
     const storePlatform = await inferStorePlatform(normalizedUrl);
     const financialAssumptions = normalizeFinancialAssumptions(
       input.financialAssumptions,
     );
-    assertScannableUrl(normalizedUrl);
     let resolvedStoreId = input.storeId;
 
     if (resolvedStoreId) {
@@ -281,7 +364,7 @@ export class ScansService {
         where: {
           storeId: resolvedStoreId,
           url: normalizedUrl,
-          requestedByUserId: input.userId,
+          requestedByUserId: userId,
           status: ScanStatus.COMPLETED,
           finishedAt: {
             gte: reuseWindowStart,
@@ -325,7 +408,7 @@ export class ScansService {
     const scan = await this.prisma.scan.create({
       data: {
         storeId: resolvedStoreId,
-        requestedByUserId: input.userId,
+        requestedByUserId: userId,
         url: normalizedUrl,
         status: ScanStatus.QUEUED,
         queuedAt: new Date(),
@@ -344,6 +427,7 @@ export class ScansService {
         url: normalizedUrl,
         storePlatform,
         financialAssumptions,
+        metaAds: input.metaAds,
       },
       {
         attempts: 4,
@@ -365,8 +449,13 @@ export class ScansService {
     };
   }
 
-  async getScanById(scanId: string, userId?: string) {
-    assertAuthenticated(userId);
+  async getScanById(scanId: string, input: AuthUserInput) {
+    assertAuthenticated(input.userId);
+    const userId = await this.resolveUserId({
+      userId: input.userId,
+      userEmail: input.userEmail,
+      userName: input.userName,
+    });
 
     const scan = await this.prisma.scan.findFirst({
       where: {

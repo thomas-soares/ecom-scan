@@ -27,6 +27,8 @@ export async function GET(_request: Request, context: RouteContext) {
     method: "GET",
     headers: {
       "x-user-id": session.user.id,
+      "x-user-email": session.user.email,
+      "x-user-name": session.user.name ?? "",
     },
     cache: "no-store",
   });
