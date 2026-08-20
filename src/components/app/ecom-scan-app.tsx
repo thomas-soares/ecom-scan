@@ -196,6 +196,7 @@ type Stat = {
 const POLL_INTERVAL_MS = 2200;
 const DEFAULT_SCAN_URL = "";
 const LOADING_MESSAGE_INTERVAL_MS = 6500;
+const MIN_COMPLETED_SCAN_SCORE = 30;
 const SCAN_LOADING_STEPS = [
   {
     title: "Validando estrutura da loja",
@@ -394,7 +395,7 @@ function scoreFromScan(scan: ScanData | null) {
     0,
   );
 
-  return Math.max(1, Math.min(99, 100 - totalImpact));
+  return Math.max(MIN_COMPLETED_SCAN_SCORE, Math.min(99, 100 - totalImpact));
 }
 
 function getInitials(name?: string | null, email?: string | null) {
