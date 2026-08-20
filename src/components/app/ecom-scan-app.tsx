@@ -23,7 +23,6 @@ import {
   Megaphone,
   Menu,
   MousePointer,
-  PackageSearch,
   Search,
   ShieldCheck,
   Waypoints,
@@ -696,7 +695,6 @@ export function EcomScanApp({ view }: { view: AppView }) {
 
     const performance = summary?.performance;
     const images = summary?.images;
-    const apps = summary?.apps;
     const metaActiveAdsCount = summary?.metaAds?.activeAdsCount;
     const googleActiveAdsCount = summary?.googleAds?.activeAdsCount;
     const visibleDetections = scan.detections.filter(
@@ -764,13 +762,14 @@ export function EcomScanApp({ view }: { view: AppView }) {
         icon: ImageIcon,
         accent: (images?.oversized ?? 0) > 3 ? "red" : "blue",
       },
-      {
-        title: "Apps",
-        value: `${apps?.detected.length ?? 0} apps`,
-        note: `${apps?.totalExternalScripts ?? 0} hosts externos de scripts encontrados.`,
-        icon: PackageSearch,
-        accent: (apps?.totalExternalScripts ?? 0) > 18 ? "amber" : "blue",
-      },
+      // Apps card intentionally hidden for now. Keep the data collection active.
+      // {
+      //   title: "Apps",
+      //   value: `${summary?.apps?.detected.length ?? 0} apps`,
+      //   note: `${summary?.apps?.totalExternalScripts ?? 0} hosts externos de scripts encontrados.`,
+      //   icon: PackageSearch,
+      //   accent: (summary?.apps?.totalExternalScripts ?? 0) > 18 ? "amber" : "blue",
+      // },
       {
         title: "Dominio",
         value: typeof domainDays === "number" ? `${domainDays} dias` : "N/D",
