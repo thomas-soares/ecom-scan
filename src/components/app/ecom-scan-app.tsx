@@ -195,7 +195,7 @@ type Stat = {
 
 const POLL_INTERVAL_MS = 2200;
 const DEFAULT_SCAN_URL = "";
-const LOADING_MESSAGE_INTERVAL_MS = 3200;
+const LOADING_MESSAGE_INTERVAL_MS = 6500;
 const SCAN_LOADING_STEPS = [
   {
     title: "Validando estrutura da loja",
@@ -711,8 +711,9 @@ export function EcomScanApp({
             ? "Informe o ticket medio em reais. Use ponto ou virgula para centavos."
             : "Tudo pronto para iniciar o diagnostico.";
   const loadingStep = SCAN_LOADING_STEPS[
-    (isSubmitting || isPolling ? loadingStepIndex : 0) %
-      SCAN_LOADING_STEPS.length
+    isSubmitting || isPolling
+      ? Math.min(loadingStepIndex, SCAN_LOADING_STEPS.length - 1)
+      : 0
   ];
 
   async function handleSignOut() {
@@ -907,6 +908,7 @@ export function EcomScanApp({
     }
 
     setIsSubmitting(true);
+    setLoadingStepIndex(0);
     setErrorMessage(null);
     setNoticeMessage(null);
     setShareMessage(null);
@@ -974,6 +976,7 @@ export function EcomScanApp({
       void loadHistory();
 
       if (view === "relatorio" && selectedScanId) {
+        setLoadingStepIndex(0);
         setActiveScanId(selectedScanId);
         setScan((currentScan) =>
           currentScan?.id === selectedScanId ? currentScan : null,
@@ -1031,7 +1034,7 @@ export function EcomScanApp({
 
     const timer = window.setInterval(() => {
       setLoadingStepIndex((currentIndex) =>
-        (currentIndex + 1) % SCAN_LOADING_STEPS.length,
+        Math.min(currentIndex + 1, SCAN_LOADING_STEPS.length - 1),
       );
     }, LOADING_MESSAGE_INTERVAL_MS);
 
