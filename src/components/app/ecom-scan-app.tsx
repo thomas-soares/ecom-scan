@@ -200,7 +200,7 @@ const MIN_COMPLETED_SCAN_SCORE = 30;
 const SCAN_LOADING_STEPS = [
   {
     title: "Validando estrutura da loja",
-    description: "Estamos identificando plataforma, paginas de produto e caminho de compra.",
+    description: "Estamos identificando plataforma, páginas de produto e caminho de compra.",
   },
   {
     title: "Mapeando fontes de tráfego",
@@ -223,14 +223,14 @@ const SCAN_LOADING_STEPS = [
     description: "Medindo peso da página, requests, scripts externos e oportunidades de otimização.",
   },
   {
-    title: "Organizando recomendacoes",
+    title: "Organizando recomendações",
     description: "Consolidando achados, impacto estimado e próximas ações do diagnóstico.",
   },
 ];
 
 function mapApiError(error: unknown, fallbackMessage: string) {
   if (error instanceof TypeError) {
-    return "Falha de conexao com a API interna. Inicie a stack com `pnpm dev:stack` ou API/worker manualmente.";
+    return "Falha de conexão com a API interna. Inicie a stack com `pnpm dev:stack` ou API/worker manualmente.";
   }
 
   if (error instanceof Error && error.message) {
@@ -383,6 +383,27 @@ function storePlatformLabel(platform?: NonNullable<ScanData["store"]>["platform"
   } as const;
 
   return platform ? labels[platform] : "Não identificado";
+}
+
+function normalizeStoredCopy(value: string) {
+  return value
+    .replace(/\bHa\b/g, "Há")
+    .replace(/\bnao\b/g, "não")
+    .replace(/\bNao\b/g, "Não")
+    .replace(/\balem\b/g, "além")
+    .replace(/\bpagina\b/g, "página")
+    .replace(/\bnecessario\b/g, "necessário")
+    .replace(/\bRecomendacao\b/g, "Recomendação")
+    .replace(/\breducao\b/g, "redução")
+    .replace(/\bmensuracao\b/g, "mensuração")
+    .replace(/\bcorrecoes\b/g, "correções")
+    .replace(/\bconversao\b/g, "conversão")
+    .replace(/\bconfirmacao\b/g, "confirmação")
+    .replace(/\btrafego\b/g, "tráfego")
+    .replace(/\bcriticos\b/g, "críticos")
+    .replace(/\bcritico\b/g, "crítico")
+    .replace(/\bproximas acoes\b/g, "próximas ações")
+    .replace(/\bdiagnostico\b/g, "diagnóstico");
 }
 
 function scoreFromScan(scan: ScanData | null) {
@@ -791,7 +812,7 @@ export function EcomScanApp({
           ? metaActiveAdsCount.toLocaleString("pt-BR")
           : "N/D",
         note: typeof metaActiveAdsCount === "number"
-          ? "Anúncios ativos encontrados na Meta."
+          ? "Média estimada de anúncios ativos encontrados na Meta."
           : "A contagem de anúncios da Meta não foi registrada neste diagnóstico.",
         icon: Waypoints,
         accent: typeof metaActiveAdsCount === "number" && metaActiveAdsCount > 0 ? "green" : "amber",
@@ -802,7 +823,7 @@ export function EcomScanApp({
           ? googleActiveAdsCount.toLocaleString("pt-BR")
           : "N/D",
         note: typeof googleActiveAdsCount === "number"
-          ? "Anúncios ativos encontrados no Google."
+          ? "Média estimada de anúncios ativos encontrados no Google."
           : "A contagem de anúncios do Google não foi registrada neste diagnóstico.",
         icon: Megaphone,
         accent: typeof googleActiveAdsCount === "number" && googleActiveAdsCount > 0 ? "green" : "amber",
@@ -1362,11 +1383,10 @@ export function EcomScanApp({
                 <>
               <Card>
                 <CardHeader>
-                  <CardTitle>Resumo executivo</CardTitle>
+                  <CardTitle>Resumo</CardTitle>
                 </CardHeader>
-                <CardContent className="grid gap-5 lg:grid-cols-[1.2fr_0.8fr]">
-                  <div>
-                    <p className="text-sm text-muted-foreground">Leitura para decisão</p>
+                <CardContent className="grid gap-6 xl:grid-cols-[0.85fr_1.15fr]">
+                  <div className="max-w-xl">
                     <p className="mt-1 text-xl font-semibold">
                       {scan.findings.some((finding) => finding.severity === "HIGH")
                         ? "Prioridade alta"
@@ -1375,34 +1395,39 @@ export function EcomScanApp({
                           : "Monitorar"}
                     </p>
                     <p className="mt-2 text-sm text-muted-foreground">
-                      {diagnostic?.executiveSummary ??
-                        "Use este relatório para priorizar correções que afetam mensuração, velocidade e caminho de compra antes de investir mais tráfego pago."}
+                      {normalizeStoredCopy(
+                        diagnostic?.executiveSummary ??
+                          "Use este relatório para priorizar correções que afetam mensuração, velocidade e caminho de compra antes de investir mais tráfego pago.",
+                      )}
                     </p>
                   </div>
-                  <div>
-                    <p className="text-sm font-medium text-foreground">Próximas ações</p>
-                    <div className="mb-3 mt-2 rounded-lg border border-border bg-muted/30 px-3 py-2 text-sm">
-                      <span className="text-muted-foreground">Anúncios ativos na Meta: </span>
-                      <span className="font-semibold text-foreground">
-                        {typeof summary?.metaAds?.activeAdsCount === "number"
-                          ? summary.metaAds.activeAdsCount.toLocaleString("pt-BR")
-                          : "N/D"}
-                      </span>
+                  <div className="space-y-3">
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      <div className="rounded-lg border border-border bg-muted/30 px-3 py-2 text-sm">
+                        <span className="text-muted-foreground">Meta: em média </span>
+                        <span className="font-semibold text-foreground">
+                          {typeof summary?.metaAds?.activeAdsCount === "number"
+                            ? summary.metaAds.activeAdsCount.toLocaleString("pt-BR")
+                            : "N/D"}
+                        </span>
+                        <span className="text-muted-foreground"> anúncios ativos</span>
+                      </div>
+                      <div className="rounded-lg border border-border bg-muted/30 px-3 py-2 text-sm">
+                        <span className="text-muted-foreground">Google: em média </span>
+                        <span className="font-semibold text-foreground">
+                          {typeof summary?.googleAds?.activeAdsCount === "number"
+                            ? summary.googleAds.activeAdsCount.toLocaleString("pt-BR")
+                            : "N/D"}
+                        </span>
+                        <span className="text-muted-foreground"> anúncios ativos</span>
+                      </div>
                     </div>
-                    <div className="mb-3 rounded-lg border border-border bg-muted/30 px-3 py-2 text-sm">
-                      <span className="text-muted-foreground">Anúncios ativos no Google: </span>
-                      <span className="font-semibold text-foreground">
-                        {typeof summary?.googleAds?.activeAdsCount === "number"
-                          ? summary.googleAds.activeAdsCount.toLocaleString("pt-BR")
-                          : "N/D"}
-                      </span>
-                    </div>
-                    <ul className="mt-2 space-y-2 text-sm text-muted-foreground">
+                    <ul className="grid gap-2 text-sm text-muted-foreground md:grid-cols-3 xl:grid-cols-1 2xl:grid-cols-3">
                       {(diagnostic?.recommendedNextSteps ?? [
                         scan.findings[0]?.description ?? "Monitorar métricas e eventos após a correção.",
                       ]).slice(0, 3).map((step) => (
-                        <li key={step} className="border-l-2 border-primary/30 pl-3">
-                          {step}
+                        <li key={step} className="border-l-2 border-primary/30 bg-muted/20 py-1.5 pl-3">
+                          {normalizeStoredCopy(step)}
                         </li>
                       ))}
                     </ul>
