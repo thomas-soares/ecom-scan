@@ -11,6 +11,8 @@ import {
   Clock3,
   Copy,
   Download,
+  Eye,
+  EyeOff,
   FileText,
   Gauge,
   Globe,
@@ -18,12 +20,12 @@ import {
   ImageIcon,
   Loader2,
   LogOut,
-  Megaphone,
   Menu,
   MousePointer,
   PackageSearch,
   Search,
   ShieldCheck,
+  Waypoints,
 } from "lucide-react";
 
 import { signIn, signOut, useSession } from "@/lib/auth-client";
@@ -60,8 +62,13 @@ type ScanData = {
       observedRequests?: Array<{
         event?: string | null;
         evidence?: string;
+        payloadQuality?: "complete" | "partial" | "missing";
       }>;
       status?: string;
+      confidenceLevel?: "HIGH" | "MEDIUM" | "LOW";
+      confidenceScore?: number;
+      evidenceSources?: string[];
+      recommendedAction?: string;
     } | null;
   }>;
   eventValidations: Array<{
@@ -138,11 +145,23 @@ type ScanData = {
           payloadQuality?: "complete" | "partial" | "missing";
         }>;
       };
+      metaAds?: {
+        activeAdsCount: number | null;
+      };
       lossAssumptions?: {
         monthlyTraffic: number;
         averageOrderValueCents: number;
-        baseConversionRate: number;
         severityConversionDrag: number;
+        estimatedLostOrders?: number;
+        formula?: string;
+      };
+      diagnostic?: {
+        confidenceLevel: "HIGH" | "MEDIUM" | "LOW";
+        confidenceScore: number;
+        executiveSummary: string;
+        confidenceReasons: string[];
+        recommendedNextSteps: string[];
+        scanLimitations: string[];
       };
     } | null;
   } | null;
@@ -211,6 +230,18 @@ function centsToCurrency(cents: number) {
   }).format(cents / 100);
 }
 
+function normalizeInputUrl(value: string) {
+  const trimmedUrl = value.trim();
+
+  if (!trimmedUrl) {
+    return "";
+  }
+
+  return /^[a-z][a-z\d+.-]*:\/\//i.test(trimmedUrl)
+    ? trimmedUrl
+    : `https://${trimmedUrl}`;
+}
+
 function formatScanTime(value: string | null | undefined) {
   if (!value) {
     return "Aguardando conclusao";
@@ -252,6 +283,32 @@ function statusVariant(
   }
 
   return "secondary";
+}
+
+function confidenceLabel(value?: "HIGH" | "MEDIUM" | "LOW" | null) {
+  if (value === "HIGH") {
+    return "Alta confianca";
+  }
+
+  if (value === "MEDIUM") {
+    return "Confianca media";
+  }
+
+  return "Baixa confianca";
+}
+
+function confidenceVariant(
+  value?: "HIGH" | "MEDIUM" | "LOW" | null,
+): "default" | "secondary" | "destructive" {
+  if (value === "HIGH") {
+    return "default";
+  }
+
+  if (value === "MEDIUM") {
+    return "secondary";
+  }
+
+  return "destructive";
 }
 
 function platformLabel(platform: Platform) {
@@ -429,6 +486,7 @@ function SidebarContent({
 function AuthGate() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -478,14 +536,30 @@ function AuthGate() {
             </div>
             <div className="grid gap-2">
               <Label htmlFor="password">Senha</Label>
-              <Input
-                id="password"
-                type="password"
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                minLength={8}
-                required
-              />
+              <div className="relative">
+                <Input
+                  id="password"
+                  type={showPassword ? "text" : "password"}
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  minLength={8}
+                  required
+                  className="pr-10"
+                />
+                <button
+                  type="button"
+                  className="absolute inset-y-0 right-0 grid w-10 place-items-center rounded-r-lg text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+                  onClick={() => setShowPassword((current) => !current)}
+                  aria-label={showPassword ? "Ocultar senha" : "Mostrar senha"}
+                  aria-pressed={showPassword}
+                >
+                  {showPassword ? (
+                    <EyeOff className="size-4" aria-hidden="true" />
+                  ) : (
+                    <Eye className="size-4" aria-hidden="true" />
+                  )}
+                </button>
+              </div>
             </div>
             {errorMessage && <p className="text-sm text-destructive">{errorMessage}</p>}
             <Button type="submit" className="h-10 w-full" disabled={isSubmitting}>
@@ -530,6 +604,7 @@ export function EcomScanApp({ view }: { view: AppView }) {
     (scanStatus === "QUEUED" || scanStatus === "RUNNING");
   const score = useMemo(() => scoreFromScan(scan), [scan]);
   const summary = scan?.report?.summary;
+  const diagnostic = summary?.diagnostic;
   const ecommerceFlow = summary?.ecommerce ?? summary?.shopify;
   const estimatedLoss = centsToCurrency(scan?.report?.estimatedMonthlyLossCents ?? 0);
   const pageLabel =
@@ -547,16 +622,20 @@ export function EcomScanApp({ view }: { view: AppView }) {
   const monthlyTrafficValue = Number(monthlyTraffic);
   const averageOrderValueValue = Number(averageOrderValue.replace(",", "."));
   const isScanUrlValid = useMemo(() => {
-    const trimmedUrl = scanUrl.trim();
+    const normalizedUrl = normalizeInputUrl(scanUrl);
 
-    if (!trimmedUrl) {
+    if (!normalizedUrl) {
       return false;
     }
 
     try {
-      const protocol = new URL(trimmedUrl).protocol;
+      const parsedUrl = new URL(normalizedUrl);
+      const protocol = parsedUrl.protocol;
 
-      return protocol === "http:" || protocol === "https:";
+      return (
+        (protocol === "http:" || protocol === "https:") &&
+        parsedUrl.hostname.includes(".")
+      );
     } catch {
       return false;
     }
@@ -579,7 +658,7 @@ export function EcomScanApp({ view }: { view: AppView }) {
     !scanUrl.trim() && !monthlyTraffic.trim() && !averageOrderValue.trim()
       ? "Preencha a URL da loja, as visitas mensais e o ticket medio para iniciar o diagnostico."
       : !isScanUrlValid
-        ? "Informe uma URL completa, com http:// ou https://."
+        ? "Informe o dominio completo da loja. Ex: sualoja.com ou https://sualoja.com."
         : !isMonthlyTrafficValid
           ? "Informe o volume mensal de visitas usando apenas numeros inteiros."
           : !isAverageOrderValueValid
@@ -591,6 +670,21 @@ export function EcomScanApp({ view }: { view: AppView }) {
     window.location.reload();
   }
 
+  function handleScanUrlChange(value: string) {
+    setScanUrl(value);
+
+    try {
+      const protocol = new URL(normalizeInputUrl(value)).protocol;
+
+      if (protocol === "http:" || protocol === "https:") {
+        return;
+      }
+    } catch {
+      // The form hint already handles invalid URLs.
+    }
+
+  }
+
   const stats = useMemo<Stat[]>(() => {
     if (!scan || scan.status !== "COMPLETED") {
       return [];
@@ -599,10 +693,11 @@ export function EcomScanApp({ view }: { view: AppView }) {
     const performance = summary?.performance;
     const images = summary?.images;
     const apps = summary?.apps;
+    const metaActiveAdsCount = summary?.metaAds?.activeAdsCount;
     const visibleDetections = scan.detections.filter(
       (item) => !isDisabledDetection(item),
     );
-    const detectedPlatforms = visibleDetections.filter((item) => item.isDetected).length;
+    const trafficSources = visibleDetections.filter((item) => item.isDetected);
     const eventPassCount = scan.eventValidations.filter((item) => item.status === "PASS").length;
     const eventTotal = scan.eventValidations.length || 3;
     const domainDays = summary?.domain?.daysUntilExpiration;
@@ -619,11 +714,25 @@ export function EcomScanApp({ view }: { view: AppView }) {
         accent: speedScore < 55 ? "red" : speedScore < 75 ? "amber" : "green",
       },
       {
-        title: "Anuncios",
-        value: detectedPlatforms > 0 ? `${detectedPlatforms} ativos` : "Inativo",
-        note: "Pixels/tags identificados por scripts e requests observados.",
-        icon: Megaphone,
-        accent: detectedPlatforms >= 2 ? "green" : detectedPlatforms === 1 ? "amber" : "red",
+        title: "Fontes de trafego",
+        value: `${trafficSources.length} ${trafficSources.length === 1 ? "fonte" : "fontes"}`,
+        note:
+          trafficSources.length > 0
+            ? `${trafficSources.map((item) => platformLabel(item.platform)).join(", ")} detectadas por scripts e requests observados.`
+            : "Nenhuma fonte de trafego foi detectada por scripts ou requests observados.",
+        icon: Waypoints,
+        accent: trafficSources.length > 0 ? "green" : "red",
+      },
+      {
+        title: "Anuncios Meta",
+        value: typeof metaActiveAdsCount === "number"
+          ? metaActiveAdsCount.toLocaleString("pt-BR")
+          : "N/D",
+        note: typeof metaActiveAdsCount === "number"
+          ? "Anuncios ativos encontrados na Meta para esta loja."
+          : "A contagem de anuncios da Meta nao foi registrada neste diagnostico.",
+        icon: Waypoints,
+        accent: typeof metaActiveAdsCount === "number" && metaActiveAdsCount > 0 ? "green" : "amber",
       },
       {
         title: "Eventos",
@@ -696,6 +805,38 @@ export function EcomScanApp({ view }: { view: AppView }) {
     }
   }
 
+  async function fetchMetaAdsCount(url: string) {
+    try {
+      const params = new URLSearchParams({ url });
+      const response = await fetch(`/api/meta-ad-library?${params.toString()}`, {
+        method: "GET",
+        cache: "no-store",
+      });
+
+      if (!response.ok) {
+        throw new Error(
+          await readApiError(response, "Nao foi possivel consultar os anuncios ativos."),
+        );
+      }
+
+      const data = (await response.json()) as {
+        activeAdsCount: number | null;
+        configured: boolean;
+        domain: string;
+        message?: string;
+      };
+
+      return {
+        count: data.activeAdsCount,
+        domain: data.domain,
+        isConfigured: data.configured,
+      };
+    } catch (error) {
+      console.warn("Nao foi possivel consultar anuncios ativos na Meta.", error);
+      return null;
+    }
+  }
+
   async function fetchScanById(scanId: string) {
     const response = await fetch(`/api/scans/${scanId}`, {
       method: "GET",
@@ -718,10 +859,10 @@ export function EcomScanApp({ view }: { view: AppView }) {
   }
 
   async function handleRunScan() {
-    const trimmedUrl = scanUrl.trim();
+    const normalizedUrl = normalizeInputUrl(scanUrl);
 
     if (!isScanUrlValid) {
-      setErrorMessage("Informe uma URL completa, comecando com http:// ou https://.");
+      setErrorMessage("Informe o dominio completo da loja. Ex: sualoja.com ou https://sualoja.com.");
       return;
     }
 
@@ -741,18 +882,20 @@ export function EcomScanApp({ view }: { view: AppView }) {
     setShareMessage(null);
 
     try {
+      const collectedMetaAds = await fetchMetaAdsCount(normalizedUrl);
       const response = await fetch("/api/scans", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          url: trimmedUrl,
+          url: normalizedUrl,
           monthlyTraffic: monthlyTrafficValue,
           averageOrderValueCents: Math.max(
             0,
             Math.round(averageOrderValueValue * 100),
           ),
+          metaActiveAdsCount: collectedMetaAds?.count ?? undefined,
         }),
       });
 
@@ -933,7 +1076,7 @@ export function EcomScanApp({ view }: { view: AppView }) {
                   <Input
                     id="scan-url"
                     value={scanUrl}
-                    onChange={(event) => setScanUrl(event.target.value)}
+                    onChange={(event) => handleScanUrlChange(event.target.value)}
                     placeholder="https://sualoja.com"
                     required
                   />
@@ -1077,6 +1220,14 @@ export function EcomScanApp({ view }: { view: AppView }) {
               <section className="grid gap-5 rounded-2xl border border-border bg-card p-5 shadow-sm md:grid-cols-[1.2fr_0.8fr] md:p-7">
                 <div>
                   <Badge variant={statusVariant(scan.status)}>{statusLabel(scan.status)}</Badge>
+                  {diagnostic && (
+                    <Badge
+                      variant={confidenceVariant(diagnostic.confidenceLevel)}
+                      className="ml-2"
+                    >
+                      {confidenceLabel(diagnostic.confidenceLevel)} ({diagnostic.confidenceScore}/100)
+                    </Badge>
+                  )}
                   <h2 className="mt-4 text-3xl font-semibold tracking-tight text-foreground">
                     Relatorio de diagnostico
                   </h2>
@@ -1147,9 +1298,9 @@ export function EcomScanApp({ view }: { view: AppView }) {
                 <CardHeader>
                   <CardTitle>Resumo executivo</CardTitle>
                 </CardHeader>
-                <CardContent className="grid gap-4 md:grid-cols-3">
+                <CardContent className="grid gap-5 lg:grid-cols-[1.2fr_0.8fr]">
                   <div>
-                    <p className="text-sm text-muted-foreground">Prioridade</p>
+                    <p className="text-sm text-muted-foreground">Leitura para decisao</p>
                     <p className="mt-1 text-xl font-semibold">
                       {scan.findings.some((finding) => finding.severity === "HIGH")
                         ? "Correcao urgente"
@@ -1157,24 +1308,31 @@ export function EcomScanApp({ view }: { view: AppView }) {
                           ? "Otimizar proximos passos"
                           : "Monitorar"}
                     </p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground">Tracking</p>
-                    <p className="mt-1 text-xl font-semibold">
-                      {scan.eventValidations.filter((event) => event.status === "PASS").length}/
-                      {scan.eventValidations.length} eventos OK
+                    <p className="mt-2 text-sm text-muted-foreground">
+                      {diagnostic?.executiveSummary ??
+                        "Use este relatorio para priorizar correcoes que afetam mensuracao, velocidade e caminho de compra antes de investir mais trafego pago."}
                     </p>
                   </div>
                   <div>
-                    <p className="text-sm text-muted-foreground">Primeira acao</p>
-                    <p className="mt-1 text-xl font-semibold">
-                      {scan.findings[0]?.title ?? "Sem acao critica"}
-                    </p>
+                    <p className="text-sm font-medium text-foreground">Proximas acoes</p>
+                    <div className="mb-3 mt-2 rounded-lg border border-border bg-muted/30 px-3 py-2 text-sm">
+                      <span className="text-muted-foreground">Anuncios ativos na Meta: </span>
+                      <span className="font-semibold text-foreground">
+                        {typeof summary?.metaAds?.activeAdsCount === "number"
+                          ? summary.metaAds.activeAdsCount.toLocaleString("pt-BR")
+                          : "N/D"}
+                      </span>
+                    </div>
+                    <ul className="mt-2 space-y-2 text-sm text-muted-foreground">
+                      {(diagnostic?.recommendedNextSteps ?? [
+                        scan.findings[0]?.description ?? "Monitorar metricas e eventos apos a correcao.",
+                      ]).slice(0, 3).map((step) => (
+                        <li key={step} className="border-l-2 border-primary/30 pl-3">
+                          {step}
+                        </li>
+                      ))}
+                    </ul>
                   </div>
-                  <p className="md:col-span-3 text-sm text-muted-foreground">
-                    Use este relatorio para priorizar correcoes que afetam mensuracao,
-                    velocidade e caminho de compra antes de investir mais trafego pago.
-                  </p>
                 </CardContent>
               </Card>
 
@@ -1189,9 +1347,9 @@ export function EcomScanApp({ view }: { view: AppView }) {
                     </p>
                     <p className="text-4xl font-semibold text-red-600">{estimatedLoss}/mes</p>
                     <p className="text-sm text-red-700/80">
-                      Premissa: {summary?.lossAssumptions?.monthlyTraffic.toLocaleString("pt-BR") ?? "30.000"} visitas/m,
-                      ticket medio {centsToCurrency(summary?.lossAssumptions?.averageOrderValueCents ?? 18000)}
-                      e queda estimada de conversao por severidade.
+                      Premissa: {summary?.lossAssumptions?.monthlyTraffic.toLocaleString("pt-BR") ?? "N/D"} visitas/m,
+                      ticket medio {summary?.lossAssumptions ? centsToCurrency(summary.lossAssumptions.averageOrderValueCents) : "N/D"}
+                      e queda estimada de conversao por severidade. A estimativa e direcional e deve ser validada com dados reais de conversao.
                     </p>
                   </div>
                 </CardContent>
@@ -1205,19 +1363,13 @@ export function EcomScanApp({ view }: { view: AppView }) {
                   <div>
                     <p className="text-sm text-muted-foreground">Visitas/mês</p>
                     <p className="text-xl font-semibold">
-                      {(summary?.lossAssumptions?.monthlyTraffic ?? 30000).toLocaleString("pt-BR")}
+                      {summary?.lossAssumptions?.monthlyTraffic.toLocaleString("pt-BR") ?? "N/D"}
                     </p>
                   </div>
                   <div>
                     <p className="text-sm text-muted-foreground">Ticket médio</p>
                     <p className="text-xl font-semibold">
-                      {centsToCurrency(summary?.lossAssumptions?.averageOrderValueCents ?? 18000)}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground">Conversão base</p>
-                    <p className="text-xl font-semibold">
-                      {((summary?.lossAssumptions?.baseConversionRate ?? 0.018) * 100).toFixed(2)}%
+                      {summary?.lossAssumptions ? centsToCurrency(summary.lossAssumptions.averageOrderValueCents) : "N/D"}
                     </p>
                   </div>
                   <div>
@@ -1226,6 +1378,18 @@ export function EcomScanApp({ view }: { view: AppView }) {
                       {((summary?.lossAssumptions?.severityConversionDrag ?? 0) * 100).toFixed(2)} p.p.
                     </p>
                   </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Pedidos perdidos</p>
+                    <p className="text-xl font-semibold">
+                      {summary?.lossAssumptions?.estimatedLostOrders?.toLocaleString("pt-BR", {
+                        maximumFractionDigits: 2,
+                      }) ?? "N/D"}
+                    </p>
+                  </div>
+                  <p className="text-sm text-muted-foreground sm:col-span-4">
+                    Formula: {summary?.lossAssumptions?.formula ??
+                      "visitas mensais x queda estimada de conversao por severidade x ticket medio"}.
+                  </p>
                 </CardContent>
               </Card>
 
@@ -1261,6 +1425,52 @@ export function EcomScanApp({ view }: { view: AppView }) {
                 </section>
               )}
 
+              {diagnostic && (
+                <section className="grid gap-5 xl:grid-cols-2">
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>Confiabilidade da leitura</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-3 text-sm">
+                      <div className="flex items-center gap-2">
+                        <Badge variant={confidenceVariant(diagnostic.confidenceLevel)}>
+                          {confidenceLabel(diagnostic.confidenceLevel)}
+                        </Badge>
+                        <span className="font-medium">{diagnostic.confidenceScore}/100</span>
+                      </div>
+                      <ul className="space-y-2 text-muted-foreground">
+                        {diagnostic.confidenceReasons.map((reason) => (
+                          <li key={reason} className="border-l-2 border-border pl-3">
+                            {reason}
+                          </li>
+                        ))}
+                      </ul>
+                    </CardContent>
+                  </Card>
+
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>Limites da varredura</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      {diagnostic.scanLimitations.length === 0 ? (
+                        <p className="text-sm text-muted-foreground">
+                          Nenhuma limitacao relevante foi registrada nesta varredura automatizada.
+                        </p>
+                      ) : (
+                        <ul className="space-y-2 text-sm text-muted-foreground">
+                          {diagnostic.scanLimitations.map((limitation) => (
+                            <li key={limitation} className="border-l-2 border-amber-300 pl-3">
+                              {limitation}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </CardContent>
+                  </Card>
+                </section>
+              )}
+
               <section className="grid gap-5 xl:grid-cols-2">
                 <Card>
                   <CardHeader>
@@ -1275,14 +1485,29 @@ export function EcomScanApp({ view }: { view: AppView }) {
                             <p className="text-sm text-muted-foreground">
                               {item.evidence || item.details?.status || "Sem evidencia observada."}
                             </p>
+                            {item.details?.recommendedAction && (
+                              <p className="mt-1 text-sm text-muted-foreground">
+                                {item.details.recommendedAction}
+                              </p>
+                            )}
                           </div>
-                          <Badge variant={item.isDetected ? "default" : "destructive"}>
-                            {item.isDetected ? "Detectado" : "Nao achou"}
-                          </Badge>
+                          <div className="flex shrink-0 flex-col items-end gap-1">
+                            <Badge variant={item.isDetected ? "default" : "destructive"}>
+                              {item.isDetected ? "Detectado" : "Nao achou"}
+                            </Badge>
+                            <Badge variant={confidenceVariant(item.details?.confidenceLevel)}>
+                              {confidenceLabel(item.details?.confidenceLevel)}
+                            </Badge>
+                          </div>
                         </div>
                         {item.details?.ids && item.details.ids.length > 0 && (
                           <p className="mt-2 text-xs text-muted-foreground">
                             IDs: {item.details.ids.join(", ")}
+                          </p>
+                        )}
+                        {item.details?.evidenceSources && item.details.evidenceSources.length > 0 && (
+                          <p className="mt-2 text-xs text-muted-foreground">
+                            Evidencias: {item.details.evidenceSources.join(", ")}
                           </p>
                         )}
                       </div>
@@ -1310,10 +1535,20 @@ export function EcomScanApp({ view }: { view: AppView }) {
                                 Payload {item.metadata.payloadQuality}
                               </Badge>
                             )}
+                            {typeof item.metadata?.confidenceLevel === "string" && (
+                              <Badge variant={confidenceVariant(item.metadata.confidenceLevel as "HIGH" | "MEDIUM" | "LOW")}>
+                                {confidenceLabel(item.metadata.confidenceLevel as "HIGH" | "MEDIUM" | "LOW")}
+                              </Badge>
+                            )}
                           </div>
                           <p className="text-sm text-muted-foreground">
                             {item.details || "Sem detalhe retornado pelo worker."}
                           </p>
+                          {typeof item.metadata?.recommendedAction === "string" && (
+                            <p className="mt-1 text-sm text-muted-foreground">
+                              {item.metadata.recommendedAction}
+                            </p>
+                          )}
                         </div>
                       </div>
                     ))}
@@ -1400,6 +1635,7 @@ export function EcomScanApp({ view }: { view: AppView }) {
                 </Card>
               </section>
 
+              {/*
               {(summary?.apps?.detected.length ?? 0) > 0 && (
                 <Card>
                   <CardHeader>
@@ -1415,6 +1651,7 @@ export function EcomScanApp({ view }: { view: AppView }) {
                   </CardContent>
                 </Card>
               )}
+              */}
                 </>
               )}
             </div>
