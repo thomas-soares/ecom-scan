@@ -51,12 +51,6 @@ type ScanJobData = {
     monthlyTraffic: number;
     averageOrderValueCents: number;
   };
-  metaAds?: {
-    activeAdsCount: number | null;
-  };
-  googleAds?: {
-    activeAdsCount: number | null;
-  };
 };
 
 async function processScan(job: Job<ScanJobData>) {
@@ -73,8 +67,6 @@ async function processScan(job: Job<ScanJobData>) {
     disabledPlatforms,
     storePlatform: job.data.storePlatform,
     financialAssumptions: job.data.financialAssumptions,
-    metaAds: job.data.metaAds,
-    googleAds: job.data.googleAds,
   });
 
   await prisma.$transaction(async (tx) => {

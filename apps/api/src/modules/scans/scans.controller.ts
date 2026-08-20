@@ -33,12 +33,6 @@ export class ScansController {
         monthlyTraffic: body.monthlyTraffic,
         averageOrderValueCents: body.averageOrderValueCents,
       },
-      metaAds: {
-        activeAdsCount: body.metaActiveAdsCount ?? null,
-      },
-      googleAds: {
-        activeAdsCount: body.googleActiveAdsCount ?? null,
-      },
     });
   }
 

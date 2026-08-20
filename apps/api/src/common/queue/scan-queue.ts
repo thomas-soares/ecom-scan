@@ -22,12 +22,6 @@ export type ScanJobData = {
     monthlyTraffic: number;
     averageOrderValueCents: number;
   };
-  metaAds?: {
-    activeAdsCount: number | null;
-  };
-  googleAds?: {
-    activeAdsCount: number | null;
-  };
 };
 
 export const scansQueue = new Queue<ScanJobData>(SCANS_QUEUE_NAME, {

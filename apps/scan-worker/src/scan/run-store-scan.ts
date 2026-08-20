@@ -1,5 +1,7 @@
 import { chromium, type Page, type Request } from "playwright";
 
+import { collectAdCounts } from "./ad-collectors";
+
 export type DetectionName =
   | "META"
   | "GOOGLE"
@@ -166,12 +168,6 @@ export type ScanOptions = {
   disabledPlatforms?: DetectionName[];
   storePlatform?: StorePlatformName;
   financialAssumptions: FinancialAssumptions;
-  metaAds?: {
-    activeAdsCount: number | null;
-  };
-  googleAds?: {
-    activeAdsCount: number | null;
-  };
 };
 
 type RdapBootstrapResponse = {
@@ -1682,7 +1678,10 @@ export async function runStoreScan(
       imageTransferKb,
       consoleErrors,
     };
-    const domain = await lookupDomainExpiration(url);
+    const [domain, adCounts] = await Promise.all([
+      lookupDomainExpiration(url),
+      collectAdCounts(browser, url),
+    ]);
     const ecommerce = {
       detected: /Shopify|cdn\.shopify|myshopify|ShopifyAnalytics|nuvemshop|tiendanube|vtex|tray|traycdn/i.test(
         allObservedText,
@@ -1743,8 +1742,8 @@ export async function runStoreScan(
             payloadQuality: request.payloadValidation.quality,
           })),
         },
-        metaAds: options.metaAds,
-        googleAds: options.googleAds,
+        metaAds: adCounts.metaAds,
+        googleAds: adCounts.googleAds,
         lossAssumptions: estimate.assumptions,
         diagnostic,
       },

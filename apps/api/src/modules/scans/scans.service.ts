@@ -16,12 +16,6 @@ type CreateScanInput = {
     monthlyTraffic: number;
     averageOrderValueCents: number;
   };
-  metaAds?: {
-    activeAdsCount: number | null;
-  };
-  googleAds?: {
-    activeAdsCount: number | null;
-  };
 };
 
 type FinancialAssumptions = NonNullable<CreateScanInput["financialAssumptions"]>;
@@ -430,8 +424,6 @@ export class ScansService {
         url: normalizedUrl,
         storePlatform,
         financialAssumptions,
-        metaAds: input.metaAds,
-        googleAds: input.googleAds,
       },
       {
         attempts: 4,

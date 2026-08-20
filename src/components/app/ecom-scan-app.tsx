@@ -826,70 +826,6 @@ export function EcomScanApp({
     }
   }
 
-  async function fetchMetaAdsCount(url: string) {
-    try {
-      const params = new URLSearchParams({ url });
-      const response = await fetch(`/api/meta-ad-library?${params.toString()}`, {
-        method: "GET",
-        cache: "no-store",
-      });
-
-      if (!response.ok) {
-        throw new Error(
-          await readApiError(response, "Nao foi possivel consultar os anuncios ativos."),
-        );
-      }
-
-      const data = (await response.json()) as {
-        activeAdsCount: number | null;
-        configured: boolean;
-        domain: string;
-        message?: string;
-      };
-
-      return {
-        count: data.activeAdsCount,
-        domain: data.domain,
-        isConfigured: data.configured,
-      };
-    } catch (error) {
-      console.warn("Nao foi possivel consultar anuncios ativos na Meta.", error);
-      return null;
-    }
-  }
-
-  async function fetchGoogleAdsCount(url: string) {
-    try {
-      const params = new URLSearchParams({ url });
-      const response = await fetch(`/api/google-ad-transparency?${params.toString()}`, {
-        method: "GET",
-        cache: "no-store",
-      });
-
-      if (!response.ok) {
-        throw new Error(
-          await readApiError(response, "Nao foi possivel consultar os anuncios ativos."),
-        );
-      }
-
-      const data = (await response.json()) as {
-        activeAdsCount: number | null;
-        configured: boolean;
-        domain: string;
-        message?: string;
-      };
-
-      return {
-        count: data.activeAdsCount,
-        domain: data.domain,
-        isConfigured: data.configured,
-      };
-    } catch (error) {
-      console.warn("Nao foi possivel consultar anuncios ativos no Google.", error);
-      return null;
-    }
-  }
-
   async function fetchScanById(scanId: string) {
     const response = await fetch(`/api/scans/${scanId}`, {
       method: "GET",
@@ -935,10 +871,6 @@ export function EcomScanApp({
     setShareMessage(null);
 
     try {
-      const [collectedMetaAds, collectedGoogleAds] = await Promise.all([
-        fetchMetaAdsCount(normalizedUrl),
-        fetchGoogleAdsCount(normalizedUrl),
-      ]);
       const response = await fetch("/api/scans", {
         method: "POST",
         headers: {
@@ -951,8 +883,6 @@ export function EcomScanApp({
             0,
             Math.round(averageOrderValueValue * 100),
           ),
-          metaActiveAdsCount: collectedMetaAds?.count ?? undefined,
-          googleActiveAdsCount: collectedGoogleAds?.count ?? undefined,
         }),
       });
 
