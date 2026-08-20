@@ -81,6 +81,38 @@ function financialAssumptionsMatch(
   );
 }
 
+function getNestedNumber(
+  input: Record<string, unknown>,
+  path: string[],
+) {
+  let current: unknown = input;
+
+  for (const key of path) {
+    if (!current || typeof current !== "object" || Array.isArray(current)) {
+      return null;
+    }
+
+    current = (current as Record<string, unknown>)[key];
+  }
+
+  return typeof current === "number" && Number.isFinite(current)
+    ? current
+    : null;
+}
+
+function hasReusableAdCounts(summary: unknown) {
+  if (!summary || typeof summary !== "object" || Array.isArray(summary)) {
+    return false;
+  }
+
+  const candidate = summary as Record<string, unknown>;
+
+  return (
+    getNestedNumber(candidate, ["metaAds", "activeAdsCount"]) !== null &&
+    getNestedNumber(candidate, ["googleAds", "activeAdsCount"]) !== null
+  );
+}
+
 function detectStorePlatformFromText(text: string): StorePlatform {
   const normalizedText = text.toLowerCase();
 
@@ -388,7 +420,8 @@ export class ScansService {
 
       if (
         recentScan &&
-        financialAssumptionsMatch(financialAssumptions, recentScanAssumptions)
+        financialAssumptionsMatch(financialAssumptions, recentScanAssumptions) &&
+        hasReusableAdCounts(recentScan.report?.summary)
       ) {
         return {
           scanId: recentScan.id,
