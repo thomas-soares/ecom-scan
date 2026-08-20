@@ -144,9 +144,22 @@ const appRules = [
 ];
 
 const eventPatterns: Record<EventName, RegExp[]> = {
-  PAGE_VIEW: [/PageView/i, /page_view/i, /collect\?/i, /\/tr\?/i],
-  ADD_TO_CART: [/AddToCart/i, /add_to_cart/i, /addToCart/i],
-  INITIATE_CHECKOUT: [/InitiateCheckout/i, /begin_checkout/i, /checkout/i],
+  PAGE_VIEW: [/PageView/i, /page_view/i, /pageview/i, /collect\?/i, /\/tr\?/i],
+  ADD_TO_CART: [
+    /AddToCart/i,
+    /add_to_cart/i,
+    /addToCart/i,
+    /add-to-cart/i,
+    /cart\/add/i,
+  ],
+  INITIATE_CHECKOUT: [
+    /InitiateCheckout/i,
+    /initiate_checkout/i,
+    /begin_checkout/i,
+    /start_checkout/i,
+    /checkout_started/i,
+    /checkout/i,
+  ],
 };
 
 export type ScanOptions = {
@@ -184,6 +197,12 @@ type NetworkEntry = {
   resourceType: string;
   method: string;
   postData: string | null;
+};
+
+type PayloadQuality = {
+  quality: "complete" | "partial" | "missing";
+  missing: string[];
+  present: string[];
 };
 
 type ResourceMetric = {
@@ -392,6 +411,41 @@ function extractIds(platform: DetectionName, text: string) {
 function parseRequestPayload(entry: NetworkEntry) {
   const payload: Record<string, string> = {};
 
+  function addPayloadValue(key: string, value: unknown) {
+    if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+      payload[key] = String(value);
+    }
+  }
+
+  function flattenPayload(value: unknown, prefix = "") {
+    if (!value || typeof value !== "object") {
+      return;
+    }
+
+    if (Array.isArray(value)) {
+      value.forEach((item, index) => {
+        const itemPrefix = prefix ? `${prefix}.${index}` : String(index);
+
+        if (item && typeof item === "object") {
+          flattenPayload(item, itemPrefix);
+        } else {
+          addPayloadValue(itemPrefix, item);
+        }
+      });
+      return;
+    }
+
+    for (const [key, nestedValue] of Object.entries(value)) {
+      const payloadKey = prefix ? `${prefix}.${key}` : key;
+
+      if (nestedValue && typeof nestedValue === "object") {
+        flattenPayload(nestedValue, payloadKey);
+      } else {
+        addPayloadValue(payloadKey, nestedValue);
+      }
+    }
+  }
+
   try {
     const parsedUrl = new URL(entry.url);
 
@@ -409,12 +463,8 @@ function parseRequestPayload(entry: NetworkEntry) {
   try {
     const body = JSON.parse(entry.postData) as unknown;
 
-    if (body && typeof body === "object" && !Array.isArray(body)) {
-      for (const [key, value] of Object.entries(body)) {
-        if (typeof value === "string" || typeof value === "number") {
-          payload[key] = String(value);
-        }
-      }
+    if (body && typeof body === "object") {
+      flattenPayload(body);
     }
   } catch {
     try {
@@ -431,15 +481,43 @@ function parseRequestPayload(entry: NetworkEntry) {
   return payload;
 }
 
+function payloadValue(
+  payload: Record<string, string>,
+  keys: string[],
+): string | undefined {
+  const normalizedKeys = new Set(keys.map((key) => key.toLowerCase()));
+
+  for (const [key, value] of Object.entries(payload)) {
+    const normalizedKey = key.toLowerCase();
+    const keyParts = normalizedKey.split(".");
+    const lastPart = keyParts.at(-1) ?? normalizedKey;
+
+    if (
+      normalizedKeys.has(normalizedKey) ||
+      normalizedKeys.has(lastPart) ||
+      keys.some((candidate) => normalizedKey.endsWith(`.${candidate.toLowerCase()}`))
+    ) {
+      return value;
+    }
+  }
+
+  return undefined;
+}
+
+function payloadHasAny(payload: Record<string, string>, keys: string[]) {
+  return Boolean(payloadValue(payload, keys));
+}
+
 function normalizeEventName(value: string | null | undefined): EventName | null {
   if (!value) {
     return null;
   }
 
-  const normalized = value.toLowerCase();
+  const normalized = value.toLowerCase().replace(/[-\s]/g, "_");
 
   if (
     normalized.includes("pageview") ||
+    normalized.includes("page_view") ||
     normalized === "page_view" ||
     normalized === "pageview"
   ) {
@@ -448,6 +526,7 @@ function normalizeEventName(value: string | null | undefined): EventName | null 
 
   if (
     normalized.includes("addtocart") ||
+    normalized.includes("add_to_cart") ||
     normalized === "add_to_cart" ||
     normalized === "add-to-cart"
   ) {
@@ -456,7 +535,10 @@ function normalizeEventName(value: string | null | undefined): EventName | null 
 
   if (
     normalized.includes("initiatecheckout") ||
+    normalized.includes("initiate_checkout") ||
     normalized === "begin_checkout" ||
+    normalized === "start_checkout" ||
+    normalized === "checkout_started" ||
     normalized === "checkout" ||
     normalized === "initiate_checkout"
   ) {
@@ -469,7 +551,17 @@ function normalizeEventName(value: string | null | undefined): EventName | null 
 function detectEventFromEntry(entry: NetworkEntry) {
   const payload = parseRequestPayload(entry);
   const explicitEvent = normalizeEventName(
-    payload.ev ?? payload.en ?? payload.event ?? payload.event_name ?? payload.name,
+    payloadValue(payload, [
+      "ev",
+      "en",
+      "event",
+      "event_name",
+      "eventName",
+      "eventAction",
+      "name",
+      "dl",
+      "ea",
+    ]),
   );
 
   if (explicitEvent) {
@@ -491,7 +583,7 @@ function validatePayloadQuality(
   platform: DetectionName,
   event: EventName | null,
   payload: Record<string, string>,
-) {
+): PayloadQuality {
   if (!event) {
     return {
       quality: "missing" as const,
@@ -502,24 +594,49 @@ function validatePayloadQuality(
 
   const commonKeys =
     platform === "META"
-      ? ["id", "ev"]
+      ? ["id", "pixel_id", "pixelId", "fb_pixel_id", "ev", "event", "event_name"]
       : platform === "GOOGLE"
-        ? ["tid", "en"]
-        : ["event"];
+        ? ["tid", "gtm", "gtm_id", "measurement_id", "send_to", "en", "event", "event_name"]
+        : ["event", "event_name"];
   const conversionKeys =
     event === "PAGE_VIEW"
       ? []
-      : ["currency", "value", "content_ids", "items", "item_id", "product_id"];
-  const hasCommon = commonKeys.some((key) => Boolean(payload[key]));
+      : [
+          "content_ids",
+          "content_id",
+          "contentId",
+          "contents",
+          "items",
+          "item_id",
+          "itemId",
+          "item_group_id",
+          "product_id",
+          "productId",
+          "product_sku",
+          "sku",
+          "variant_id",
+          "variantId",
+          "id",
+        ];
+  const hasCommon = payloadHasAny(payload, commonKeys);
   const hasValue =
     event === "PAGE_VIEW" ||
-    ["value", "price", "revenue"].some((key) => Boolean(payload[key]));
+    payloadHasAny(payload, [
+      "value",
+      "price",
+      "revenue",
+      "amount",
+      "total",
+      "subtotal",
+      "order_total",
+      "cart_total",
+    ]);
   const hasCurrency =
     event === "PAGE_VIEW" ||
-    ["currency", "cu"].some((key) => Boolean(payload[key]));
+    payloadHasAny(payload, ["currency", "currency_code", "currencyCode", "cu"]);
   const hasItem =
     event === "PAGE_VIEW" ||
-    conversionKeys.some((key) => Boolean(payload[key]));
+    payloadHasAny(payload, conversionKeys);
   const missing = [
     !hasCommon ? "tracking_id_or_event_name" : null,
     !hasValue ? "value" : null,
@@ -865,6 +982,61 @@ async function clickFirstVisible(page: Page, selectors: string[]) {
   }
 
   return null;
+}
+
+async function clickFirstVisibleAndCapturePopup(page: Page, selectors: string[]) {
+  for (const selector of selectors) {
+    const locator = page.locator(selector).first();
+
+    try {
+      if ((await locator.count()) > 0 && (await locator.isVisible())) {
+        const popupPromise = page
+          .context()
+          .waitForEvent("page", { timeout: 5000 })
+          .catch(() => null);
+
+        await locator.click({ timeout: 5000 });
+
+        return {
+          selector,
+          popup: await popupPromise,
+        };
+      }
+    } catch {
+      // Try the next likely selector.
+    }
+  }
+
+  return {
+    selector: null,
+    popup: null,
+  };
+}
+
+function attachPageInstrumentation(
+  page: Page,
+  networkEntries: NetworkEntry[],
+  onConsoleError: () => void,
+) {
+  page.on("request", (request: Request) => {
+    networkEntries.push({
+      url: request.url(),
+      method: request.method(),
+      resourceType: request.resourceType(),
+      postData: request.postData(),
+    });
+  });
+
+  page.on("console", (message) => {
+    if (message.type() === "error") {
+      onConsoleError();
+    }
+  });
+}
+
+async function waitForTrackingToSettle(page: Page, timeoutMs: number) {
+  await page.waitForLoadState("domcontentloaded", { timeout: timeoutMs }).catch(() => {});
+  await page.waitForLoadState("networkidle", { timeout: timeoutMs }).catch(() => {});
 }
 
 async function auditImages(page: Page): Promise<ImageAudit> {
@@ -1327,19 +1499,13 @@ export async function runStoreScan(
   const storePlatform = options.storePlatform ?? "OTHER";
   let consoleErrors = 0;
 
-  page.on("request", (request: Request) => {
-    networkEntries.push({
-      url: request.url(),
-      method: request.method(),
-      resourceType: request.resourceType(),
-      postData: request.postData(),
-    });
+  attachPageInstrumentation(page, networkEntries, () => {
+    consoleErrors += 1;
   });
-
-  page.on("console", (message) => {
-    if (message.type() === "error") {
+  page.context().on("page", (newPage) => {
+    attachPageInstrumentation(newPage, networkEntries, () => {
       consoleErrors += 1;
-    }
+    });
   });
 
   const startedAt = Date.now();
@@ -1350,6 +1516,7 @@ export async function runStoreScan(
   let clickedCheckout = false;
   let addToCartMethod: string | null = null;
   let checkoutMethod: string | null = null;
+  let checkoutPage: Page | null = null;
 
   try {
     await page.goto(url, { waitUntil: "domcontentloaded", timeout: 45000 });
@@ -1383,15 +1550,29 @@ export async function runStoreScan(
       await page.waitForTimeout(2500);
     }
 
-    checkoutMethod = await clickFirstVisible(
+    const checkoutClick = await clickFirstVisibleAndCapturePopup(
       page,
       uniqueSelectors(storePlatform, "checkout"),
     );
+    checkoutMethod = checkoutClick.selector;
+    checkoutPage = checkoutClick.popup;
     clickedCheckout = Boolean(checkoutMethod);
 
     if (clickedCheckout) {
-      await page.waitForTimeout(3000);
-      checkoutUrl = page.url().includes("checkout") ? page.url() : null;
+      await Promise.all([
+        waitForTrackingToSettle(page, 8000),
+        checkoutPage ? waitForTrackingToSettle(checkoutPage, 8000) : Promise.resolve(),
+      ]);
+      await page.waitForTimeout(5000);
+
+      const candidateUrls = [
+        page.url(),
+        checkoutPage?.url() ?? null,
+      ].filter((candidate): candidate is string => Boolean(candidate));
+
+      checkoutUrl =
+        candidateUrls.find((candidate) => /checkout|finalizar|carrinho|cart/i.test(candidate)) ??
+        null;
     }
 
     if (!checkoutUrl) {
@@ -1400,7 +1581,11 @@ export async function runStoreScan(
       )?.url ?? null;
     }
 
-    const allObservedText = `${html}\n${scripts.join("\n")}\n${networkEntries
+    const pageHtmlAfterInteractions = await page.content().catch(() => "");
+    const checkoutPageHtml = checkoutPage
+      ? await checkoutPage.content().catch(() => "")
+      : "";
+    const allObservedText = `${html}\n${pageHtmlAfterInteractions}\n${checkoutPageHtml}\n${scripts.join("\n")}\n${networkEntries
       .map((entry) => entry.url)
       .join("\n")}`;
     const disabledPlatforms = new Set(options.disabledPlatforms ?? []);
