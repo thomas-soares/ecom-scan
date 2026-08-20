@@ -810,7 +810,7 @@ function buildDetectionDetails(input: {
     isDetected,
     details: {
       ids: input.ids,
-      commercialSignal: commercialSignal ?? undefined,
+      ...(commercialSignal ? { commercialSignal } : {}),
       confidenceLevel,
       confidenceScore: isDetected ? score : 0,
       evidenceSources,
