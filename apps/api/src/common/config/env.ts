@@ -6,6 +6,6 @@ export const env = {
     process.env.ENABLE_RECENT_SCAN_REUSE !== "false" &&
     process.env.ENABLE_RECENT_SCAN_REUSE !== "0",
   RECENT_SCAN_REUSE_WINDOW_MINUTES: Number(
-    process.env.RECENT_SCAN_REUSE_WINDOW_MINUTES ?? 30,
+    process.env.RECENT_SCAN_REUSE_WINDOW_MINUTES ?? 5,
   ),
 };
