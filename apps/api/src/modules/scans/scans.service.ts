@@ -231,7 +231,7 @@ function normalizeScannableUrl(rawUrl: string) {
   try {
     parsedUrl = new URL(urlWithProtocol);
   } catch {
-    throw new BadRequestException("Informe uma URL valida da loja.");
+    throw new BadRequestException("Informe uma URL válida da loja.");
   }
 
   if (parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:") {
@@ -239,7 +239,7 @@ function normalizeScannableUrl(rawUrl: string) {
   }
 
   if (!parsedUrl.hostname.includes(".")) {
-    throw new BadRequestException("Informe o dominio completo da loja.");
+    throw new BadRequestException("Informe o domínio completo da loja.");
   }
 
   parsedUrl.hash = "";
@@ -430,7 +430,7 @@ export class ScansService {
           reused: true,
           reusedFinishedAt: recentScan.finishedAt,
           reuseWindowMinutes: env.RECENT_SCAN_REUSE_WINDOW_MINUTES,
-          message: `Ja existe um diagnostico concluido para esta URL nos ultimos ${env.RECENT_SCAN_REUSE_WINDOW_MINUTES} minutos com as mesmas premissas financeiras. O resultado do historico foi reutilizado.`,
+          message: `Já existe um diagnóstico concluído para esta URL nos últimos ${env.RECENT_SCAN_REUSE_WINDOW_MINUTES} minutos com as mesmas premissas financeiras. O resultado do histórico foi reutilizado.`,
         };
       }
     }

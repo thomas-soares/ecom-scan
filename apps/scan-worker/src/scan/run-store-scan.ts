@@ -721,17 +721,17 @@ function detectionRecommendedAction(
 ) {
   if (!isDetected) {
     if (commercialSignal) {
-      return `${platformLabel(platform)} tem anuncios ativos, mas o pixel/tag nao foi confirmado tecnicamente no navegador. Validar instalacao no gerenciador de eventos, GTM e checkout VTEX.`;
+      return `${platformLabel(platform)} tem anúncios ativos, mas o pixel/tag não foi confirmado tecnicamente no navegador. Validar instalação no gerenciador de eventos, GTM e checkout VTEX.`;
     }
 
     return `Instalar ou revisar a tag de ${platformLabel(platform)} no tema e no gerenciador de tags.`;
   }
 
   if (confidenceLevel !== "HIGH") {
-    return `Validar ${platformLabel(platform)} no gerenciador de eventos, porque a tag foi vista sem request de conversao completo.`;
+    return `Validar ${platformLabel(platform)} no gerenciador de eventos, porque a tag foi vista sem request de conversão completo.`;
   }
 
-  return `Manter ${platformLabel(platform)} e acompanhar se os eventos de conversao continuam chegando com payload completo.`;
+  return `Manter ${platformLabel(platform)} e acompanhar se os eventos de conversão continuam chegando com payload completo.`;
 }
 
 function platformLabel(platform: DetectionName) {
@@ -803,7 +803,7 @@ function buildDetectionDetails(input: {
     input.ids.length > 0 ? "ID de tag extraido" : null,
     completeRequests.length > 0 ? "payload completo" : null,
     partialRequests.length > 0 ? "payload parcial" : null,
-    commercialSignal ? "anuncios ativos encontrados" : null,
+    commercialSignal ? "anúncios ativos encontrados" : null,
   ].filter((item): item is string => Boolean(item));
 
   return {
@@ -1237,7 +1237,7 @@ function buildEventValidation(
         confidenceScore: 45,
         confidenceLevel: "LOW",
         recommendedAction:
-          "Revisar o disparo do evento AddToCart no clique do botao de compra ou no dataLayer.",
+          "Revisar o disparo do evento AddToCart no clique do botão de compra ou no dataLayer.",
       },
     };
   }
@@ -1253,7 +1253,7 @@ function buildEventValidation(
         confidenceScore: 45,
         confidenceLevel: "LOW",
         recommendedAction:
-          "Revisar o disparo de InitiateCheckout no botao de checkout e na abertura do checkout.",
+          "Revisar o disparo de InitiateCheckout no botão de checkout e na abertura do checkout.",
       },
     };
   }
@@ -1262,7 +1262,7 @@ function buildEventValidation(
     event,
     status: "WARNING" as const,
     details:
-      "Nao foi possivel confirmar o disparo do evento durante a navegacao automatizada.",
+      "Não foi possível confirmar o disparo do evento durante a navegação automatizada.",
     metadata: {
       confidenceScore: 20,
       confidenceLevel: "LOW",
@@ -1300,12 +1300,12 @@ function createFindings(input: {
       severity: missingPrimaryTracking.length >= 2 ? "HIGH" : "MEDIUM",
       title:
         missingWithActiveAds.length > 0
-          ? "Midia ativa sem tracking confirmado"
+          ? "Mídia ativa sem tracking confirmado"
           : "Pixels principais incompletos",
       description:
         missingWithActiveAds.length > 0
-          ? "Ha anuncios ativos, mas Meta ou Google nao tiveram pixel/tag confirmado tecnicamente no navegador. Recomendacao: validar instalacao no gerenciador de eventos, GTM, Pixel Apps da VTEX, consentimento e checkout antes de escalar midia paga."
-          : "Meta e Google sao canais prioritarios para a V1; ao menos um deles nao foi detectado com evidencia suficiente. Recomendacao: revisar instalacao da tag, GTM e bloqueios de consentimento antes de escalar midia paga.",
+          ? "Há anúncios ativos, mas Meta ou Google não tiveram pixel/tag confirmado tecnicamente no navegador. Recomendação: validar instalação no gerenciador de eventos, GTM, Pixel Apps da VTEX, consentimento e checkout antes de escalar mídia paga."
+          : "Meta e Google são canais prioritários para a V1; ao menos um deles não foi detectado com evidência suficiente. Recomendação: revisar instalação da tag, GTM e bloqueios de consentimento antes de escalar mídia paga.",
       impactScore: missingPrimaryTracking.length * 18,
     });
   }
@@ -1314,9 +1314,9 @@ function createFindings(input: {
     findings.push({
       category: "TRACKING",
       severity: warningEvents.length >= 2 ? "HIGH" : "MEDIUM",
-      title: "Eventos de conversao sem confirmacao completa",
+      title: "Eventos de conversão sem confirmação completa",
       description:
-        "Um ou mais eventos essenciais nao tiveram disparo confirmado durante o fluxo automatizado. Recomendacao: validar PageView, AddToCart e InitiateCheckout no gerenciador de eventos e completar payloads de valor, moeda e produto.",
+        "Um ou mais eventos essenciais não tiveram disparo confirmado durante o fluxo automatizado. Recomendação: validar PageView, AddToCart e InitiateCheckout no gerenciador de eventos e completar payloads de valor, moeda e produto.",
       impactScore: warningEvents.length * 14,
     });
   }
@@ -1325,9 +1325,9 @@ function createFindings(input: {
     findings.push({
       category: "TRACKING",
       severity: "MEDIUM",
-      title: "Fluxo de compra nao foi confirmado ponta a ponta",
+      title: "Fluxo de compra não foi confirmado ponta a ponta",
       description:
-        "O scan nao conseguiu confirmar produto e carrinho com seguranca. Recomendacao: checar se a pagina depende de interacoes especiais, pop-ups, seletor de variante ou bloqueios anti-bot.",
+        "O scan não conseguiu confirmar produto e carrinho com segurança. Recomendação: checar se a página depende de interações especiais, pop-ups, seletor de variante ou bloqueios anti-bot.",
       impactScore: 12,
     });
   }
@@ -1336,9 +1336,9 @@ function createFindings(input: {
     findings.push({
       category: "TRACKING",
       severity: "MEDIUM",
-      title: "Checkout nao foi observado",
+      title: "Checkout não foi observado",
       description:
-        "O fluxo automatizado nao confirmou chegada ao checkout. Recomendacao: validar manualmente o botao de checkout e medir se eventos de inicio de checkout disparam no caminho real do usuario.",
+        "O fluxo automatizado não confirmou chegada ao checkout. Recomendação: validar manualmente o botão de checkout e medir se eventos de início de checkout disparam no caminho real do usuário.",
       impactScore: 12,
     });
   }
@@ -1349,7 +1349,7 @@ function createFindings(input: {
       severity: input.loadTimeMs > 8000 ? "HIGH" : "MEDIUM",
       title: "Carregamento inicial lento",
       description:
-        "A pagina demorou alem do esperado para carregar e estabilizar os recursos iniciais. Recomendacao: priorizar reducao de scripts bloqueantes, imagens iniciais e apps carregados no topo da pagina.",
+        "A página demorou além do esperado para carregar e estabilizar os recursos iniciais. Recomendação: priorizar redução de scripts bloqueantes, imagens iniciais e apps carregados no topo da página.",
       impactScore: input.loadTimeMs > 8000 ? 20 : 12,
     });
   }
@@ -1360,7 +1360,7 @@ function createFindings(input: {
       severity: input.performance.scriptTransferKb > 1600 ? "HIGH" : "MEDIUM",
       title: "JavaScript pesado",
       description:
-        "O volume transferido de scripts pode estar atrasando a renderizacao e a interacao. Recomendacao: remover apps sem uso, adiar scripts nao criticos e auditar tags duplicadas.",
+        "O volume transferido de scripts pode estar atrasando a renderização e a interação. Recomendação: remover apps sem uso, adiar scripts não críticos e auditar tags duplicadas.",
       impactScore: input.performance.scriptTransferKb > 1600 ? 18 : 10,
     });
   }
@@ -1369,7 +1369,7 @@ function createFindings(input: {
     findings.push({
       category: "PERFORMANCE",
       severity: input.images.oversized > 4 ? "HIGH" : "MEDIUM",
-      title: "Imagens com oportunidade de otimizacao",
+      title: "Imagens com oportunidade de otimização",
       description:
         "Foram encontradas imagens maiores que o necessario ou sem carregamento sob demanda. Recomendacao: converter imagens grandes para formatos modernos, dimensionar banners e aplicar lazy loading fora da primeira dobra.",
       impactScore: Math.min(20, input.images.oversized * 4 + input.images.missingLazyLoading),
@@ -1382,7 +1382,7 @@ function createFindings(input: {
       severity: input.apps.totalExternalScripts > 28 ? "HIGH" : "MEDIUM",
       title: "Muitos scripts externos e apps ativos",
       description:
-        "A loja carrega um volume alto de scripts de terceiros, o que pode prejudicar velocidade e rastreamento. Recomendacao: revisar apps por impacto comercial e remover scripts duplicados ou sem dono.",
+        "A loja carrega um volume alto de scripts de terceiros, o que pode prejudicar velocidade e rastreamento. Recomendação: revisar apps por impacto comercial e remover scripts duplicados ou sem dono.",
       impactScore: input.apps.totalExternalScripts > 28 ? 18 : 10,
     });
   }
@@ -1394,9 +1394,9 @@ function createFindings(input: {
     findings.push({
       category: "PERFORMANCE",
       severity: "MEDIUM",
-      title: "Dominio proximo do vencimento",
+      title: "Domínio próximo do vencimento",
       description:
-        "O dominio esta proximo do vencimento e pode causar risco operacional se nao for renovado. Recomendacao: renovar o dominio e confirmar responsavel operacional.",
+        "O domínio está próximo do vencimento e pode causar risco operacional se não for renovado. Recomendação: renovar o domínio e confirmar responsável operacional.",
       impactScore: 8,
     });
   }
@@ -1432,7 +1432,7 @@ function estimateMonthlyLossCents(
       severityConversionDrag: cappedDrag,
       estimatedLostOrders: Number(lostOrders.toFixed(2)),
       formula:
-        "visitas mensais x queda estimada de conversao por severidade x ticket medio",
+        "visitas mensais x queda estimada de conversão por severidade x ticket médio",
     },
   };
 }
@@ -1441,22 +1441,22 @@ function formatScanFailure(error: unknown) {
   const message = error instanceof Error ? error.message : String(error);
 
   if (/Timeout|timed out|Navigation timeout/i.test(message)) {
-    return "A loja demorou para carregar ou bloqueou a navegacao automatizada. Tente novamente mais tarde ou valide se ha protecao anti-bot, pop-up obrigatorio ou instabilidade.";
+    return "A loja demorou para carregar ou bloqueou a navegação automatizada. Tente novamente mais tarde ou valide se há proteção anti-bot, pop-up obrigatório ou instabilidade.";
   }
 
   if (/net::ERR_NAME_NOT_RESOLVED|ENOTFOUND|ERR_NAME/i.test(message)) {
-    return "Nao foi possivel resolver o dominio informado. Confirme se a URL esta correta e se a loja esta online.";
+    return "Não foi possível resolver o domínio informado. Confirme se a URL está correta e se a loja está online.";
   }
 
   if (/net::ERR_CONNECTION_REFUSED|ECONNREFUSED|ERR_CONNECTION/i.test(message)) {
-    return "Nao foi possivel conectar na loja. Confirme se o site esta online e aceita conexoes externas.";
+    return "Não foi possível conectar na loja. Confirme se o site está online e aceita conexões externas.";
   }
 
   if (/ERR_CERT|certificate/i.test(message)) {
     return "A loja apresentou problema de certificado SSL durante o acesso automatizado.";
   }
 
-  return `Nao foi possivel concluir a varredura desta URL. Detalhe tecnico: ${message}`;
+  return `Não foi possível concluir a varredura desta URL. Detalhe técnico: ${message}`;
 }
 
 function buildDiagnosticSummary(input: {
@@ -1489,28 +1489,28 @@ function buildDiagnosticSummary(input: {
       ];
   const scanLimitations = [
     !input.ecommerce.productUrl
-      ? "Produto nao localizado automaticamente; alguns eventos de funil podem exigir validacao manual."
+      ? "Produto não localizado automaticamente; alguns eventos de funil podem exigir validação manual."
       : null,
     !input.ecommerce.checkoutUrl
-      ? "Checkout nao confirmado por URL; validar fluxo real quando houver seletor de variante, pop-up ou login."
+      ? "Checkout não confirmado por URL; validar fluxo real quando houver seletor de variante, pop-up ou login."
       : null,
     warningEvents.length > 0
-      ? "Eventos com payload parcial ou ausente precisam ser comparados com a plataforma de anuncios."
+      ? "Eventos com payload parcial ou ausente precisam ser comparados com a plataforma de anúncios."
       : null,
   ].filter((item): item is string => Boolean(item));
   const executiveSummary =
     criticalFindings.length > 0
-      ? "Ha problemas criticos que podem afetar mensuracao, performance ou caminho de compra antes de ampliar investimento em trafego."
+      ? "Há problemas críticos que podem afetar mensuração, performance ou caminho de compra antes de ampliar investimento em tráfego."
       : input.findings.length > 0
-        ? "A loja esta operando, mas existem oportunidades claras de ajuste em tracking, performance ou funil."
-        : "A varredura nao encontrou problemas criticos nos sinais observados; manter monitoramento recorrente.";
+        ? "A loja está operando, mas existem oportunidades claras de ajuste em tracking, performance ou funil."
+        : "A varredura não encontrou problemas críticos nos sinais observados; manter monitoramento recorrente.";
 
   return {
     confidenceLevel: confidenceLevelFromScore(averageScore),
     confidenceScore: averageScore,
     executiveSummary,
     confidenceReasons: [
-      `${activeDetections.length} fonte(s) de trafego detectada(s).`,
+      `${activeDetections.length} fonte(s) de tráfego detectada(s).`,
       `${input.events.filter((item) => item.status === "PASS").length}/${input.events.length} eventos confirmados.`,
       `${input.performance.totalRequests} requests observados durante o scan.`,
       `${input.imageAudit.total} imagens auditadas.`,

@@ -19,7 +19,7 @@ export async function GET(_request: Request, context: RouteContext) {
   });
 
   if (!session?.user?.id) {
-    return NextResponse.json({ message: "Nao autenticado." }, { status: 401 });
+    return NextResponse.json({ message: "Não autenticado." }, { status: 401 });
   }
 
   const { scanId } = await context.params;

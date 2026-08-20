@@ -16,7 +16,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "Viscale Scan",
-  description: "Diagnostico de e-commerce da Viscale Scan",
+  description: "Diagnóstico de e-commerce da Viscale Scan",
 };
 
 export default function RootLayout({

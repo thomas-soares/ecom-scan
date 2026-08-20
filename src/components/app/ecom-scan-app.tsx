@@ -203,28 +203,28 @@ const SCAN_LOADING_STEPS = [
     description: "Estamos identificando plataforma, paginas de produto e caminho de compra.",
   },
   {
-    title: "Mapeando fontes de trafego",
+    title: "Mapeando fontes de tráfego",
     description: "Buscando tags de Meta, Google e outros canais usados pela loja.",
   },
   {
     title: "Conferindo eventos principais",
-    description: "Testando page view, carrinho e inicio de checkout no fluxo real.",
+    description: "Testando page view, carrinho e início de checkout no fluxo real.",
   },
   {
-    title: "Buscando anuncios ativos na Meta",
-    description: "Comparando a presenca de campanhas com a leitura de pixels da loja.",
+    title: "Buscando anúncios ativos na Meta",
+    description: "Comparando a presença de campanhas com a leitura de pixels da loja.",
   },
   {
-    title: "Buscando anuncios ativos no Google",
-    description: "Consultando sinais publicos de campanhas que apontam para o dominio.",
+    title: "Buscando anúncios ativos no Google",
+    description: "Consultando sinais públicos de campanhas que apontam para o domínio.",
   },
   {
     title: "Avaliando imagens e performance",
-    description: "Medindo peso da pagina, requests, scripts externos e oportunidades de otimizacao.",
+    description: "Medindo peso da página, requests, scripts externos e oportunidades de otimização.",
   },
   {
     title: "Organizando recomendacoes",
-    description: "Consolidando achados, impacto estimado e proximas acoes do diagnostico.",
+    description: "Consolidando achados, impacto estimado e próximas ações do diagnóstico.",
   },
 ];
 
@@ -303,8 +303,8 @@ function statusLabel(status: ScanStatus | null | undefined) {
 
   const labels: Record<ScanStatus, string> = {
     QUEUED: "Na fila",
-    RUNNING: "Em execucao",
-    COMPLETED: "Concluido",
+    RUNNING: "Em execução",
+    COMPLETED: "Concluído",
     FAILED: "Falhou",
   };
 
@@ -327,14 +327,14 @@ function statusVariant(
 
 function confidenceLabel(value?: "HIGH" | "MEDIUM" | "LOW" | null) {
   if (value === "HIGH") {
-    return "Alta confianca";
+    return "Alta confiança";
   }
 
   if (value === "MEDIUM") {
-    return "Confianca media";
+    return "Confiança média";
   }
 
-  return "Baixa confianca";
+  return "Baixa confiança";
 }
 
 function confidenceVariant(
@@ -379,10 +379,10 @@ function storePlatformLabel(platform?: NonNullable<ScanData["store"]>["platform"
     NUVEMSHOP: "Nuvemshop",
     VTEX: "VTEX",
     TRAY: "Tray",
-    OTHER: "Nao identificado",
+    OTHER: "Não identificado",
   } as const;
 
-  return platform ? labels[platform] : "Nao identificado";
+  return platform ? labels[platform] : "Não identificado";
 }
 
 function scoreFromScan(scan: ScanData | null) {
@@ -465,9 +465,9 @@ function SidebarContent({
 }) {
   const pathname = usePathname();
   const navItems = [
-    { label: "Diagnostico", icon: House, href: "/diagnostico" },
-    { label: "Historico", icon: Clock3, href: "/historico" },
-    { label: "Relatorio", icon: FileText, href: "/relatorio" },
+    { label: "Diagnóstico", icon: House, href: "/diagnostico" },
+    { label: "Histórico", icon: Clock3, href: "/historico" },
+    { label: "Relatório", icon: FileText, href: "/relatorio" },
   ];
 
   return (
@@ -539,7 +539,7 @@ function AuthGate() {
       const result = await signIn.email({ email, password });
 
       if (result.error) {
-        setErrorMessage(result.error.message || "Nao foi possivel autenticar.");
+        setErrorMessage(result.error.message || "Não foi possível autenticar.");
         return;
       }
 
@@ -558,7 +558,7 @@ function AuthGate() {
           <LogoMark className="mb-3 h-14 w-48" />
           <CardTitle>Entrar no Ecom Scan</CardTitle>
           <p className="text-sm text-muted-foreground">
-            Use email e senha para acessar a plataforma de diagnostico.
+            Use email e senha para acessar a plataforma de diagnóstico.
           </p>
         </CardHeader>
         <CardContent>
@@ -656,16 +656,16 @@ export function EcomScanApp({
   const estimatedLoss = centsToCurrency(scan?.report?.estimatedMonthlyLossCents ?? 0);
   const pageLabel =
     view === "diagnostico"
-      ? "Diagnostico"
+      ? "Diagnóstico"
       : view === "historico"
-        ? "Historico"
-        : "Relatorio e-commerce";
+        ? "Histórico"
+        : "Relatório e-commerce";
   const pageTitle =
     view === "diagnostico"
-      ? "Novo diagnostico"
+      ? "Novo diagnóstico"
       : view === "historico"
-        ? "Historico de analises"
-        : "Relatorio";
+        ? "Histórico de análises"
+        : "Relatório";
   const monthlyTrafficValue = Number(monthlyTraffic);
   const averageOrderValueValue = Number(averageOrderValue.replace(",", "."));
   const isScanUrlValid = useMemo(() => {
@@ -703,14 +703,14 @@ export function EcomScanApp({
     !isPolling;
   const scanFormHint =
     !scanUrl.trim() && !monthlyTraffic.trim() && !averageOrderValue.trim()
-      ? "Preencha a URL da loja, as visitas mensais e o ticket medio para iniciar o diagnostico."
+      ? "Preencha a URL da loja, as visitas mensais e o ticket médio para iniciar o diagnóstico."
       : !isScanUrlValid
-        ? "Informe o dominio completo da loja. Ex: sualoja.com ou https://sualoja.com."
+        ? "Informe o domínio completo da loja. Ex: sualoja.com ou https://sualoja.com."
         : !isMonthlyTrafficValid
-          ? "Informe o volume mensal de visitas usando apenas numeros inteiros."
+          ? "Informe o volume mensal de visitas usando apenas números inteiros."
           : !isAverageOrderValueValid
-            ? "Informe o ticket medio em reais. Use ponto ou virgula para centavos."
-            : "Tudo pronto para iniciar o diagnostico.";
+            ? "Informe o ticket médio em reais. Use ponto ou vírgula para centavos."
+            : "Tudo pronto para iniciar o diagnóstico.";
   const loadingStep = SCAN_LOADING_STEPS[
     isSubmitting || isPolling
       ? Math.min(loadingStepIndex, SCAN_LOADING_STEPS.length - 1)
@@ -776,24 +776,24 @@ export function EcomScanApp({
         accent: trafficSources.length > 0 ? "green" : "red",
       },
       {
-        title: "Anuncios Meta",
+        title: "Anúncios Meta",
         value: typeof metaActiveAdsCount === "number"
           ? metaActiveAdsCount.toLocaleString("pt-BR")
           : "N/D",
         note: typeof metaActiveAdsCount === "number"
-          ? "Midia ativa encontrada na Meta; isso nao confirma pixel instalado."
-          : "A contagem de anuncios da Meta nao foi registrada neste diagnostico.",
+          ? "Anúncios ativos encontrados na Meta."
+          : "A contagem de anúncios da Meta não foi registrada neste diagnóstico.",
         icon: Waypoints,
         accent: typeof metaActiveAdsCount === "number" && metaActiveAdsCount > 0 ? "green" : "amber",
       },
       {
-        title: "Anuncios Google",
+        title: "Anúncios Google",
         value: typeof googleActiveAdsCount === "number"
           ? googleActiveAdsCount.toLocaleString("pt-BR")
           : "N/D",
         note: typeof googleActiveAdsCount === "number"
-          ? "Midia ativa encontrada no Google; isso nao confirma tag instalada."
-          : "A contagem de anuncios do Google nao foi registrada neste diagnostico.",
+          ? "Anúncios ativos encontrados no Google."
+          : "A contagem de anúncios do Google não foi registrada neste diagnóstico.",
         icon: Megaphone,
         accent: typeof googleActiveAdsCount === "number" && googleActiveAdsCount > 0 ? "green" : "amber",
       },
@@ -820,11 +820,11 @@ export function EcomScanApp({
       //   accent: (summary?.apps?.totalExternalScripts ?? 0) > 18 ? "amber" : "blue",
       // },
       {
-        title: "Dominio",
+        title: "Domínio",
         value: typeof domainDays === "number" ? `${domainDays} dias` : "N/D",
         note: summary?.domain?.expiresAt
           ? `Expira em ${formatScanTime(summary.domain.expiresAt)}.`
-          : "Expiracao nao confirmada via RDAP.",
+          : "Expiração não confirmada via RDAP.",
         icon: Globe,
         accent: typeof domainDays === "number" && domainDays <= 30 ? "red" : "blue",
       },
@@ -857,13 +857,13 @@ export function EcomScanApp({
 
       if (!response.ok) {
         throw new Error(
-          await readApiError(response, "Nao foi possivel carregar o historico."),
+          await readApiError(response, "Não foi possível carregar o histórico."),
         );
       }
 
       setHistory((await response.json()) as HistoryScan[]);
     } catch (error) {
-      setErrorMessage(mapApiError(error, "Erro ao carregar historico."));
+      setErrorMessage(mapApiError(error, "Erro ao carregar histórico."));
     } finally {
       setIsHistoryLoading(false);
     }
@@ -877,7 +877,7 @@ export function EcomScanApp({
 
     if (!response.ok) {
       throw new Error(
-        await readApiError(response, "Nao foi possivel consultar o scan."),
+        await readApiError(response, "Não foi possível consultar o scan."),
       );
     }
 
@@ -894,17 +894,17 @@ export function EcomScanApp({
     const normalizedUrl = normalizeInputUrl(scanUrl);
 
     if (!isScanUrlValid) {
-      setErrorMessage("Informe o dominio completo da loja. Ex: sualoja.com ou https://sualoja.com.");
+      setErrorMessage("Informe o domínio completo da loja. Ex: sualoja.com ou https://sualoja.com.");
       return;
     }
 
     if (!isMonthlyTrafficValid) {
-      setErrorMessage("Informe as visitas mensais usando apenas numeros inteiros.");
+      setErrorMessage("Informe as visitas mensais usando apenas números inteiros.");
       return;
     }
 
     if (!isAverageOrderValueValid) {
-      setErrorMessage("Informe o ticket medio em reais antes de iniciar.");
+      setErrorMessage("Informe o ticket médio em reais antes de iniciar.");
       return;
     }
 
@@ -932,7 +932,7 @@ export function EcomScanApp({
 
       if (!response.ok) {
         throw new Error(
-          await readApiError(response, "Nao foi possivel iniciar o scan."),
+          await readApiError(response, "Não foi possível iniciar o scan."),
         );
       }
 
@@ -947,7 +947,7 @@ export function EcomScanApp({
       setActiveScanId(data.scanId);
       setScanStatus(data.status);
       setDetectedPlatform(data.platform ?? null);
-      setNoticeMessage(data.reused ? data.message || "Diagnostico recente reutilizado do historico." : null);
+      setNoticeMessage(data.reused ? data.message || "Diagnóstico recente reutilizado do histórico." : null);
       router.push(`/relatorio?scanId=${data.scanId}`);
       await fetchScanById(data.scanId);
       await loadHistory();
@@ -1114,7 +1114,7 @@ export function EcomScanApp({
               <CardHeader>
                   <CardTitle className="flex items-center gap-2">
                     <Search className="size-4" />
-                  Nova analise de e-commerce
+                  Nova análise de e-commerce
                   </CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
@@ -1130,7 +1130,7 @@ export function EcomScanApp({
                 </div>
                 <div className="grid gap-3 sm:grid-cols-2">
                   <div className="grid gap-2">
-                    <Label htmlFor="monthly-traffic">Visitas/mes</Label>
+                    <Label htmlFor="monthly-traffic">Visitas/mês</Label>
                     <Input
                       id="monthly-traffic"
                       inputMode="numeric"
@@ -1141,7 +1141,7 @@ export function EcomScanApp({
                     />
                   </div>
                   <div className="grid gap-2">
-                    <Label htmlFor="average-order-value">Ticket medio</Label>
+                    <Label htmlFor="average-order-value">Ticket médio</Label>
                     <Input
                       id="average-order-value"
                       inputMode="decimal"
@@ -1176,7 +1176,7 @@ export function EcomScanApp({
                     ) : (
                       <>
                         <ShieldCheck className="size-4" />
-                        Rodar diagnostico
+                        Rodar diagnóstico
                       </>
                     )}
                   </Button>
@@ -1205,7 +1205,7 @@ export function EcomScanApp({
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center justify-between">
-                  Historico
+                  Histórico
                   {isHistoryLoading && <Loader2 className="size-4 animate-spin text-muted-foreground" />}
                 </CardTitle>
               </CardHeader>
@@ -1224,14 +1224,14 @@ export function EcomScanApp({
                     }
                   >
                     <option value="ALL">Todos</option>
-                    <option value="COMPLETED">Concluidos</option>
-                    <option value="RUNNING">Em execucao</option>
+                    <option value="COMPLETED">Concluídos</option>
+                    <option value="RUNNING">Em execução</option>
                     <option value="QUEUED">Na fila</option>
                     <option value="FAILED">Falhos</option>
                   </select>
                 </div>
                 {history.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">Nenhum scan salvo para este usuario.</p>
+                  <p className="text-sm text-muted-foreground">Nenhum scan salvo para este usuário.</p>
                 ) : filteredHistory.length === 0 ? (
                   <p className="text-sm text-muted-foreground">Nenhum item corresponde aos filtros.</p>
                 ) : (
@@ -1276,7 +1276,7 @@ export function EcomScanApp({
                     </Badge>
                   )}
                   <h2 className="mt-4 text-3xl font-semibold tracking-tight text-foreground">
-                    Relatorio de diagnostico
+                    Relatório de diagnóstico
                   </h2>
                   <p className="mt-2 break-all text-sm text-muted-foreground">{scan.url}</p>
                   <p className="mt-1 text-sm text-muted-foreground">
@@ -1290,9 +1290,9 @@ export function EcomScanApp({
                   <div className="flex flex-col items-start gap-3 md:items-end">
                     <ScoreRing score={score} />
                     <div className="max-w-xs text-sm text-muted-foreground md:text-right">
-                      <p className="font-medium text-foreground">Pontuacao geral</p>
+                      <p className="font-medium text-foreground">Pontuação geral</p>
                       <p>
-                        A pontuacao combina tracking, eventos, performance, imagens e apps detectados.
+                        A pontuação destaca oportunidades observadas em tracking, eventos, performance, imagens e apps.
                       </p>
                     </div>
                   </div>
@@ -1331,7 +1331,7 @@ export function EcomScanApp({
                     <div>
                       <p className="font-semibold text-red-700">Scan falhou</p>
                       <p className="text-sm text-red-700/80">
-                        {scan.errorMessage || "Nao foi possivel concluir a varredura desta URL."}
+                        {scan.errorMessage || "Não foi possível concluir a varredura desta URL."}
                       </p>
                     </div>
                   </CardContent>
@@ -1344,23 +1344,23 @@ export function EcomScanApp({
                 </CardHeader>
                 <CardContent className="grid gap-5 lg:grid-cols-[1.2fr_0.8fr]">
                   <div>
-                    <p className="text-sm text-muted-foreground">Leitura para decisao</p>
+                    <p className="text-sm text-muted-foreground">Leitura para decisão</p>
                     <p className="mt-1 text-xl font-semibold">
                       {scan.findings.some((finding) => finding.severity === "HIGH")
-                        ? "Correcao urgente"
+                        ? "Prioridade alta"
                         : scan.findings.length > 0
-                          ? "Otimizar proximos passos"
+                          ? "Otimizar próximos passos"
                           : "Monitorar"}
                     </p>
                     <p className="mt-2 text-sm text-muted-foreground">
                       {diagnostic?.executiveSummary ??
-                        "Use este relatorio para priorizar correcoes que afetam mensuracao, velocidade e caminho de compra antes de investir mais trafego pago."}
+                        "Use este relatório para priorizar correções que afetam mensuração, velocidade e caminho de compra antes de investir mais tráfego pago."}
                     </p>
                   </div>
                   <div>
-                    <p className="text-sm font-medium text-foreground">Proximas acoes</p>
+                    <p className="text-sm font-medium text-foreground">Próximas ações</p>
                     <div className="mb-3 mt-2 rounded-lg border border-border bg-muted/30 px-3 py-2 text-sm">
-                      <span className="text-muted-foreground">Anuncios ativos na Meta: </span>
+                      <span className="text-muted-foreground">Anúncios ativos na Meta: </span>
                       <span className="font-semibold text-foreground">
                         {typeof summary?.metaAds?.activeAdsCount === "number"
                           ? summary.metaAds.activeAdsCount.toLocaleString("pt-BR")
@@ -1368,7 +1368,7 @@ export function EcomScanApp({
                       </span>
                     </div>
                     <div className="mb-3 rounded-lg border border-border bg-muted/30 px-3 py-2 text-sm">
-                      <span className="text-muted-foreground">Anuncios ativos no Google: </span>
+                      <span className="text-muted-foreground">Anúncios ativos no Google: </span>
                       <span className="font-semibold text-foreground">
                         {typeof summary?.googleAds?.activeAdsCount === "number"
                           ? summary.googleAds.activeAdsCount.toLocaleString("pt-BR")
@@ -1377,7 +1377,7 @@ export function EcomScanApp({
                     </div>
                     <ul className="mt-2 space-y-2 text-sm text-muted-foreground">
                       {(diagnostic?.recommendedNextSteps ?? [
-                        scan.findings[0]?.description ?? "Monitorar metricas e eventos apos a correcao.",
+                        scan.findings[0]?.description ?? "Monitorar métricas e eventos após a correção.",
                       ]).slice(0, 3).map((step) => (
                         <li key={step} className="border-l-2 border-primary/30 pl-3">
                           {step}
@@ -1397,11 +1397,11 @@ export function EcomScanApp({
                     <p className="text-sm font-medium uppercase tracking-wide text-red-700">
                       Perda mensal estimada
                     </p>
-                    <p className="text-4xl font-semibold text-red-600">{estimatedLoss}/mes</p>
+                    <p className="text-4xl font-semibold text-red-600">{estimatedLoss}/mês</p>
                     <p className="text-sm text-red-700/80">
                       Premissa: {summary?.lossAssumptions?.monthlyTraffic.toLocaleString("pt-BR") ?? "N/D"} visitas/m,
-                      ticket medio {summary?.lossAssumptions ? centsToCurrency(summary.lossAssumptions.averageOrderValueCents) : "N/D"}
-                      e queda estimada de conversao por severidade. A estimativa e direcional e deve ser validada com dados reais de conversao.
+                      ticket médio {summary?.lossAssumptions ? centsToCurrency(summary.lossAssumptions.averageOrderValueCents) : "N/D"}
+                      e queda estimada de conversão por severidade. A estimativa é direcional e deve ser validada com dados reais de conversão.
                     </p>
                   </div>
                 </CardContent>
@@ -1439,8 +1439,8 @@ export function EcomScanApp({
                     </p>
                   </div>
                   <p className="text-sm text-muted-foreground sm:col-span-4">
-                    Formula: {summary?.lossAssumptions?.formula ??
-                      "visitas mensais x queda estimada de conversao por severidade x ticket medio"}.
+                    Fórmula: {summary?.lossAssumptions?.formula ??
+                      "visitas mensais x queda estimada de conversão por severidade x ticket médio"}.
                   </p>
                 </CardContent>
               </Card>
@@ -1538,12 +1538,12 @@ export function EcomScanApp({
                               {item.evidence ||
                                 item.details?.status ||
                                 (item.details?.commercialSignal
-                                  ? "Midia ativa encontrada, mas sem request ou script de tracking confirmado."
-                                  : "Sem evidencia observada.")}
+                                  ? "Mídia ativa encontrada, mas sem request ou script de tracking confirmado."
+                                  : "Sem evidência observada.")}
                             </p>
                             {item.details?.commercialSignal && (
                               <p className="mt-1 text-sm text-muted-foreground">
-                                Anuncios ativos:{" "}
+                                Anúncios ativos:{" "}
                                 {item.details.commercialSignal.activeAdsCount.toLocaleString("pt-BR")}
                               </p>
                             )}
@@ -1558,8 +1558,8 @@ export function EcomScanApp({
                               {item.isDetected
                                 ? "Detectado"
                                 : item.details?.commercialSignal
-                                  ? "Nao confirmado"
-                                  : "Nao achou"}
+                                  ? "Não confirmado"
+                                  : "Não achou"}
                             </Badge>
                             <Badge variant={confidenceVariant(item.details?.confidenceLevel)}>
                               {confidenceLabel(item.details?.confidenceLevel)}
@@ -1573,7 +1573,7 @@ export function EcomScanApp({
                         )}
                         {item.details?.evidenceSources && item.details.evidenceSources.length > 0 && (
                           <p className="mt-2 text-xs text-muted-foreground">
-                            Evidencias: {item.details.evidenceSources.join(", ")}
+                            Evidências: {item.details.evidenceSources.join(", ")}
                           </p>
                         )}
                       </div>
@@ -1583,7 +1583,7 @@ export function EcomScanApp({
 
                 <Card>
                   <CardHeader>
-                    <CardTitle>Eventos de conversao</CardTitle>
+                    <CardTitle>Eventos de conversão</CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-3">
                     {scan.eventValidations.map((item) => (
@@ -1630,7 +1630,7 @@ export function EcomScanApp({
                   <CardContent>
                     {scan.findings.length === 0 ? (
                       <p className="text-sm text-muted-foreground">
-                        Nenhum problema critico detectado nesta varredura.
+                        Nenhum problema crítico detectado nesta varredura.
                       </p>
                     ) : (
                       <ul>
@@ -1664,25 +1664,25 @@ export function EcomScanApp({
                     <div className="flex items-center justify-between border-b border-border pb-2">
                       <span className="text-muted-foreground">Produto testado</span>
                       <span className="max-w-[220px] truncate font-medium">
-                        {ecommerceFlow?.productHandle ?? "Nao localizado"}
+                        {ecommerceFlow?.productHandle ?? "Não localizado"}
                       </span>
                     </div>
                     <div className="flex items-center justify-between border-b border-border pb-2">
                       <span className="text-muted-foreground">Checkout observado</span>
                       <span className="max-w-[220px] truncate font-medium">
-                        {ecommerceFlow?.checkoutUrl ? "Sim" : "Nao"}
+                        {ecommerceFlow?.checkoutUrl ? "Sim" : "Não"}
                       </span>
                     </div>
                     <div className="flex items-center justify-between border-b border-border pb-2">
                       <span className="text-muted-foreground">Add to cart</span>
                       <span className="max-w-[220px] truncate font-medium">
-                        {ecommerceFlow?.addToCartMethod ? "Interagiu" : "Nao confirmado"}
+                        {ecommerceFlow?.addToCartMethod ? "Interagiu" : "Não confirmado"}
                       </span>
                     </div>
                     <div className="flex items-center justify-between border-b border-border pb-2">
                       <span className="text-muted-foreground">Metodo checkout</span>
                       <span className="max-w-[220px] truncate font-medium">
-                        {ecommerceFlow?.checkoutMethod ? "Interagiu" : "Nao confirmado"}
+                        {ecommerceFlow?.checkoutMethod ? "Interagiu" : "Não confirmado"}
                       </span>
                     </div>
                     <div className="flex items-center justify-between border-b border-border pb-2">
@@ -1726,14 +1726,14 @@ export function EcomScanApp({
               <CardContent className="flex flex-col items-center justify-center py-14 text-center">
                 <Search className="size-10 text-muted-foreground" />
                 <h2 className="mt-4 text-2xl font-semibold text-foreground">
-                  Nenhum diagnostico executado ainda
+                  Nenhum diagnóstico executado ainda
                 </h2>
                 <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
-                  Selecione uma analise no historico ou rode um novo diagnostico para
-                  carregar pixels, eventos, performance, perda estimada e relatorio.
+                  Selecione uma análise no histórico ou rode um novo diagnóstico para
+                  carregar pixels, eventos, performance, perda estimada e relatório.
                 </p>
                 <Button className="mt-5" render={<Link href="/diagnostico" />}>
-                  Novo diagnostico
+                  Novo diagnóstico
                 </Button>
               </CardContent>
             </Card>

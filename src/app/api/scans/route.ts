@@ -19,7 +19,7 @@ export async function GET() {
   const user = await getSessionUser();
 
   if (!user) {
-    return NextResponse.json({ message: "Nao autenticado." }, { status: 401 });
+    return NextResponse.json({ message: "Não autenticado." }, { status: 401 });
   }
 
   const response = await fetch(`${API_BASE_URL}/scans`, {
@@ -45,7 +45,7 @@ export async function POST(request: Request) {
   const user = await getSessionUser();
 
   if (!user) {
-    return NextResponse.json({ message: "Nao autenticado." }, { status: 401 });
+    return NextResponse.json({ message: "Não autenticado." }, { status: 401 });
   }
 
   const response = await fetch(`${API_BASE_URL}/scans`, {
