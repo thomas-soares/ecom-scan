@@ -190,6 +190,37 @@ type Stat = {
 
 const POLL_INTERVAL_MS = 2200;
 const DEFAULT_SCAN_URL = "";
+const LOADING_MESSAGE_INTERVAL_MS = 3200;
+const SCAN_LOADING_STEPS = [
+  {
+    title: "Validando estrutura da loja",
+    description: "Estamos identificando plataforma, paginas de produto e caminho de compra.",
+  },
+  {
+    title: "Mapeando fontes de trafego",
+    description: "Buscando tags de Meta, Google e outros canais usados pela loja.",
+  },
+  {
+    title: "Conferindo eventos principais",
+    description: "Testando page view, carrinho e inicio de checkout no fluxo real.",
+  },
+  {
+    title: "Buscando anuncios ativos na Meta",
+    description: "Comparando a presenca de campanhas com a leitura de pixels da loja.",
+  },
+  {
+    title: "Buscando anuncios ativos no Google",
+    description: "Consultando sinais publicos de campanhas que apontam para o dominio.",
+  },
+  {
+    title: "Avaliando imagens e performance",
+    description: "Medindo peso da pagina, requests, scripts externos e oportunidades de otimizacao.",
+  },
+  {
+    title: "Organizando recomendacoes",
+    description: "Consolidando achados, impacto estimado e proximas acoes do diagnostico.",
+  },
+];
 
 function mapApiError(error: unknown, fallbackMessage: string) {
   if (error instanceof TypeError) {
@@ -608,6 +639,7 @@ export function EcomScanApp({
   const [shareMessage, setShareMessage] = useState<string | null>(null);
   const [monthlyTraffic, setMonthlyTraffic] = useState("");
   const [averageOrderValue, setAverageOrderValue] = useState("");
+  const [loadingStepIndex, setLoadingStepIndex] = useState(0);
   const isPolling =
     Boolean(activeScanId) &&
     (scanStatus === "QUEUED" || scanStatus === "RUNNING");
@@ -673,6 +705,10 @@ export function EcomScanApp({
           : !isAverageOrderValueValid
             ? "Informe o ticket medio em reais. Use ponto ou virgula para centavos."
             : "Tudo pronto para iniciar o diagnostico.";
+  const loadingStep = SCAN_LOADING_STEPS[
+    (isSubmitting || isPolling ? loadingStepIndex : 0) %
+      SCAN_LOADING_STEPS.length
+  ];
 
   async function handleSignOut() {
     await signOut();
@@ -983,6 +1019,20 @@ export function EcomScanApp({
     };
   }, [activeScanId, scanStatus]);
 
+  useEffect(() => {
+    if (!isSubmitting && !isPolling) {
+      return;
+    }
+
+    const timer = window.setInterval(() => {
+      setLoadingStepIndex((currentIndex) =>
+        (currentIndex + 1) % SCAN_LOADING_STEPS.length,
+      );
+    }, LOADING_MESSAGE_INTERVAL_MS);
+
+    return () => window.clearInterval(timer);
+  }, [isPolling, isSubmitting]);
+
   if (isPending) {
     return (
       <main className="grid min-h-screen place-items-center bg-background">
@@ -1243,10 +1293,8 @@ export function EcomScanApp({
                       <Loader2 className="size-10 animate-spin" />
                     </div>
                     <div className="max-w-xs text-sm text-muted-foreground md:text-right">
-                      <p className="font-medium text-foreground">Scan em processamento</p>
-                      <p>
-                        O relatorio final aparece quando o worker terminar a varredura.
-                      </p>
+                      <p className="font-medium text-foreground">{loadingStep.title}</p>
+                      <p>{loadingStep.description}</p>
                     </div>
                   </div>
                 )}
@@ -1258,11 +1306,10 @@ export function EcomScanApp({
                     <Loader2 className="size-9 animate-spin text-primary" />
                     <div>
                       <p className="text-lg font-semibold text-foreground">
-                        Executando diagnostico da loja
+                        {loadingStep.title}
                       </p>
                       <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-                        Estamos carregando a pagina, buscando pixels, tentando o fluxo de produto,
-                        carrinho e checkout, e calculando os sinais de performance.
+                        {loadingStep.description}
                       </p>
                     </div>
                     <Progress value={scan.status === "QUEUED" ? 35 : 72} className="max-w-md" />
